@@ -62,7 +62,8 @@
     white-space: nowrap; font-size: 12px; }
   .pill { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line);
     color: var(--dim); }
-  .step-head input[type=checkbox], .call input[type=checkbox] { accent-color: var(--blue); cursor: pointer; }
+  .step-head input[type=checkbox], .call input[type=checkbox], .filtered-row input[type=checkbox] { accent-color: var(--blue); cursor: pointer; }
+  .pill-noise { opacity: .65; color: var(--amber); border-color: var(--amber); }
 
   .empty { color: var(--dim); text-align: center; padding: 30px 0; }
   .toast { position: fixed; bottom: 14px; right: 14px; background: var(--panel);
@@ -95,7 +96,7 @@
   <div class="pane"><div id="flowContainer" class="empty">No recording yet. Start recording, then use the page.</div></div>
 
   <div id="filteredWrap" class="pane hidden">
-    <div class="filtered-head">Dropped as noise — assets &amp; telemetry (most recent first)</div>
+    <div class="filtered-head">Appears as noise (assets &amp; telemetry) — unchecked, tick to include in the export (most recent first)</div>
     <div id="filteredList"></div>
   </div>
 

@@ -18,9 +18,8 @@
   const MAX_BODY_CHARS = 200000; // ~200KB of text per body
 
   function Correlator() {
-    this.calls = [];       // accepted calls (noise removed), each checked by default
-    this.filtered = 0;     // dropped-noise count
-    this.filteredCalls = []; // dropped calls with reason (diagnostic, capped, not persisted)
+    this.calls = [];       // all stored calls; noise-qualified ones are unchecked
+    this.filtered = 0;     // stored-noise count (visible in stats)
     this.deduped = 0;      // burst-duplicate count
     this.dedupeWindowMs = 1500;
     this.dedupeKeyToTs = {}; // fingerprint -> last ts (not persisted)
@@ -38,15 +37,12 @@
   /* ---------- ingestion ---------- */
 
   /**
-   * Ingest one captured call. Returns the stored call or null if dropped.
+   * Ingest one captured call. Returns the stored call, or null when it was a
+   * burst duplicate. Noise calls (assets/telemetry) are NOT discarded — they
+   * are stored unchecked so the user can decide whether to include them.
    */
   Correlator.prototype.addCall = function (rawCall) {
-    const dropReason = rawCall ? NoiseFilter.filterReason(rawCall) : 'no-url';
-    if (dropReason) {
-      this.filtered++;
-      this.rememberDropped(rawCall, dropReason);
-      return null;
-    }
+    const noiseReason = rawCall ? NoiseFilter.filterReason(rawCall) : 'no-url';
 
     // Burst-dedupe: same method|host|path|status within the window is a repeat.
     const fp = this.fingerprint(rawCall);
@@ -57,6 +53,8 @@
     }
     this.dedupeKeyToTs[fp] = now;
 
+    if (noiseReason) this.filtered++;
+
     const call = {
       id: 'c' + (this.calls.length + 1),
       method: rawCall.method || 'GET',
@@ -65,9 +63,12 @@
       requestHeaders: rawCall.requestHeaders || [],
       responseHeaders: rawCall.responseHeaders || [],
       requestBody: truncateBody(rawCall.requestBody),
-      responseBody: truncateBody(rawCall.responseBody),
+      // Noise bodies are skipped: base64 images/media would balloon the
+      // session and are never useful for export.
+      responseBody: noiseReason ? null : truncateBody(rawCall.responseBody),
       ts: now,
-      checked: true
+      checked: !noiseReason,
+      noiseReason: noiseReason || undefined
     };
     this.calls.push(call);
     return call;
@@ -81,16 +82,6 @@
       path = u.pathname;
     } catch (e) {}
     return (call.method || 'GET') + '|' + host + '|' + path + '|' + (call.status != null ? call.status : '');
-  };
-
-  // Diagnostic record of dropped calls (in-memory only, capped, not persisted).
-  Correlator.prototype.rememberDropped = function (rawCall, reason) {
-    this.filteredCalls.push({
-      url: rawCall && rawCall.url ? rawCall.url : '',
-      reason: reason,
-      ts: (rawCall && rawCall.ts) || Date.now()
-    });
-    if (this.filteredCalls.length > 200) this.filteredCalls.shift();
   };
 
   /* ---------- grouping ---------- */
@@ -163,9 +154,10 @@
     if (Array.isArray(state.calls)) this.calls = state.calls;
     if (typeof state.filtered === 'number') this.filtered = state.filtered;
     if (typeof state.deduped === 'number') this.deduped = state.deduped;
-    // Persisted calls predating the checked field default to checked.
+    // Persisted calls without an explicit checked state: noise defaults off,
+    // everything else on.
     for (const call of this.calls) {
-      if (typeof call.checked !== 'boolean') call.checked = true;
+      if (typeof call.checked !== 'boolean') call.checked = !call.noiseReason;
     }
   };
 

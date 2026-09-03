@@ -34,3 +34,7 @@ T9. Enrich Postman export to full v2.1 fidelity → verify: 11/11 suite green; o
 T10. Filter hygiene + transparency → verify: 14/14 suite green; probe: api.1stdibsdata.com kept, bundle.js dropped by extension, telemetry still dropped; filteredCalls capped at 200 with reasons — passed
    files: utils/filter.js, utils/correlation.js, background.js, panel.js, panel.html, apitap.test.js
    Changes: exact/subdomain-only telemetry host matching (killed host.includes over-match); purged junk entries ('1stdibs','qquared','crashtrace','gtag') and dead '/'-entries; '.js' added to ASSET_EXTENSIONS; filterReason() classifies drops; engine records dropped calls (url+reason, cap 200, in-memory); panel: clickable Filtered stat opens the dropped-list pane.
+
+T11. Noise is now stored, not discarded — user decides via checkboxes → verify: 15/15 suite green; selectable-noise test (check noise call → appears in export as own group); noise bodies skipped; mergeState keeps noise unchecked — passed
+   files: utils/correlation.js, background.js, panel.js, panel.html, apitap.test.js
+   Changes: engine stores noise calls with checked:false + noiseReason (responseBody null — base64 images/media would balloon the session); burst-dedupe still drops repeats; Filtered pane + group rows both show checkboxes over the same checked state; mergeState defaults noise→unchecked, others→checked.

@@ -98,6 +98,7 @@
       '<input type="checkbox" data-check="' + call.id + '"' + (call.checked !== false ? ' checked' : '') + '>' +
       '<span class="method ' + methodClass(call.method) + '">' + escapeHtml(call.method) + '</span>' +
       '<span class="status ' + statusClass(call.status) + '">' + (call.status != null ? call.status : '—') + '</span>' +
+      (call.noiseReason ? '<span class="pill pill-noise">' + escapeHtml(call.noiseReason) + '</span>' : '') +
       '<span class="call-url" title="' + escapeHtml(call.url) + '">' + escapeHtml(call.url) + '</span>';
     row.querySelector('[data-check]').addEventListener('change', (e) => {
       send({ type: 'UPDATE_CHECKED', id: call.id, checked: e.target.checked });
@@ -162,20 +163,25 @@
   }
 
   function renderFiltered() {
-    const dropped = session.filteredCalls || [];
+    const dropped = (session.calls || []).filter((c) => c.noiseReason).slice(-50).reverse();
     els.btnFiltered.disabled = !dropped.length;
     const host = els.filteredList;
     host.innerHTML = '';
-    for (const d of dropped.slice(-50).reverse()) {
+    for (const d of dropped) {
       const row = document.createElement('div');
       row.className = 'filtered-row';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = d.checked !== false;
+      cb.addEventListener('change', () => send({ type: 'UPDATE_CHECKED', id: d.id, checked: cb.checked }));
       const pill = document.createElement('span');
       pill.className = 'pill';
-      pill.textContent = d.reason;
+      pill.textContent = d.noiseReason;
       const u = document.createElement('span');
       u.className = 'call-url';
       u.title = d.url;
       u.textContent = d.url;
+      row.appendChild(cb);
       row.appendChild(pill);
       row.appendChild(u);
       host.appendChild(row);
@@ -213,7 +219,6 @@
   els.btnFiltered.addEventListener('click', () => {
     $('filteredWrap').classList.toggle('hidden');
   });
-
   els.btnExport.addEventListener('click', async () => {
     const res = await send({ type: 'EXPORT_POSTMAN' });
     toast(res && res.success ? 'Collection downloaded' : 'Export failed');

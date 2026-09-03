@@ -32,26 +32,45 @@ t('filterReason classifies drops', () => {
   assert.strictEqual(NoiseFilter.filterReason(mk('https://www.google-analytics.com/collect')), 'telemetry');
   assert.strictEqual(NoiseFilter.filterReason(mk('https://api.x.com/v1/users', 'application/json')), null);
 });
-t('dropped calls are recorded with reason, capped at 200', () => {
+t('noise stats still count stored noise; mergeState keeps noise unchecked', () => {
   const c = new Correlator();
-  for (let i = 0; i < 205; i++) c.addCall({ method: 'GET', url: 'https://x.com/pixel' + (i % 2) + '.png', ts: i * 2000 + 1 });
-  assert.strictEqual(c.filtered, 205);
-  assert.strictEqual(c.filteredCalls.length, 200);
-  assert.strictEqual(c.filteredCalls[0].reason, 'asset-extension');
-  assert(c.filteredCalls.every((d) => d.url && d.ts));
+  for (let i = 0; i < 3; i++) c.addCall({ method: 'GET', url: 'https://x.com/pixel' + i + '.png', ts: i * 2000 + 1 });
+  assert.strictEqual(c.filtered, 3);
+  assert.strictEqual(c.calls.length, 3);
+  const restored = new Correlator();
+  restored.mergeState(c.serialize());
+  assert(restored.calls.every((x) => x.checked === false && x.noiseReason === 'asset-extension'));
 });
 t('tracking params stripped', () => {
   assert.strictEqual(NoiseFilter.stripTrackingParams('https://x.com/a?utm_source=x&real=1&gclid=y'), 'https://x.com/a?real=1');
 });
 
 /* ---- engine ---- */
-t('burst duplicates and noise are dropped; calls are checked by default', () => {
+t('burst duplicates drop; noise calls are stored unchecked, others checked', () => {
   const c = new Correlator();
   const first = c.addCall({ method: 'GET', url: 'https://api.x.com/users', status: 200, ts: 1000 });
-  assert.strictEqual(c.addCall({ method: 'GET', url: 'https://api.x.com/users', status: 200, ts: 1100 }), null);
-  assert.strictEqual(c.addCall({ method: 'GET', url: 'https://x.com/pixel.png', ts: 1200 }), null);
-  assert.strictEqual(c.deduped + c.filtered, 2);
+  assert.strictEqual(c.addCall({ method: 'GET', url: 'https://api.x.com/users', status: 200, ts: 1100 }), null); // burst dedupe
+  assert.strictEqual(c.deduped, 1);
+  const noise = c.addCall({ method: 'GET', url: 'https://x.com/pixel.png', ts: 1200 });
+  assert.notStrictEqual(noise, null);           // stored, not discarded
+  assert.strictEqual(noise.checked, false);     // unchecked by default
+  assert.strictEqual(noise.noiseReason, 'asset-extension');
+  assert.strictEqual(noise.responseBody, null); // noise bodies skipped
+  assert.strictEqual(c.filtered, 1);
   assert.strictEqual(first.checked, true);
+});
+t('noise calls are user-selectable: checking one includes it in the export', () => {
+  const c = new Correlator();
+  c.addCall({ method: 'GET', url: 'https://api.x.com/users', ts: 1000 });
+  const noise = c.addCall({ method: 'GET', url: 'https://opencode.ai/_server?id=1', ts: 3000,
+    responseHeaders: [{ name: 'Content-Type', value: 'text/javascript' }] });
+  assert.strictEqual(noise.checked, false);
+  const col = Exporter.buildCollection(c);
+  assert.strictEqual(col.item.length, 1); // noise excluded by default
+  c.setChecked(noise.id, true);
+  const col2 = Exporter.buildCollection(c);
+  assert.strictEqual(col2.item.length, 2);
+  assert(col2.item.some((f) => f.name === 'GET /_server'));
 });
 t('groups derived by method+host+path; query is collapsed', () => {
   const c = new Correlator();
