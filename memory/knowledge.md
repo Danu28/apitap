@@ -1,0 +1,14 @@
+# Knowledge — ApiTap
+
+Project facts the pipeline relies on:
+- Extension layout (v2): manifest v3; devtools_page (devtools.js) is the ONLY capture path; background service worker (background.js) owns state + persistence; panel.html/panel.js render; utils/ are pure dual-exported modules (`globalThis` for SW via importScripts, `module.exports` for Node tests).
+- DevTools constraint: network capture only runs while DevTools is open on the tab. Unchanged in v2.
+- MV3 gotchas: SW may die anytime → all handlers await ensureSessionLoaded(); session persisted to chrome.storage.local key 'apitapSession'; unlimitedStorage granted; persistSession try/catch'd (in-memory fallback).
+- request.ts for captured calls = request START (startedDateTime) not finish.
+- Engine (utils/correlation.js, class still named ApiTapCorrelator): noise-filter via filter.js, burst-dedupe (fingerprint method|host|path|status, 1500ms), groupKey = METHOD|host|pathname (query/hash dropped; malformed → 'unparseable'), call.checked (default true), setChecked(id|groupKey, bool), groups() derived Map (never stored), getStats {calls, groups, filtered, deduped}, serialize/mergeState (checked defaults true for old records).
+- snapshot (GET_SESSION) derives groupKey per call — panel renders, never recomputes grouping itself.
+- Exporter (utils/postman.js): buildCollection filters checked!==false, one folder per groupKey (label "METHOD /path"), {{baseUrl}} from most-common origin, DROP_HEADERS incl. cookie (stale session state — never exported), body kept raw with truncation marker stripped. URL objects are Postman-native: raw ({{baseUrl}}-substituted) + protocol/host[]/path[]/query params/hash/variable[] parsed from the concrete URL. Structured auth (bearer/basic) derived from the Authorization header; item-level response: []. Collection variable type must be 'string' (v2.1 enum) — 'default' is schema-invalid.
+- Export is JSON-schema-validated against https://schema.postman.com/json/collection/v2.1.0/collection.json (fetch to /tmp, ajv-draft-04, NODE_PATH=C:/Users/dhanu/node_modules due to npm prefix quirk).
+- Panel: one pane, no tabs; group row = checkbox (indeterminate when mixed) + method badge + path + count + expand; export button disabled when nothing checked; SESSION_UPDATED re-fetch debounced 200ms.
+- Test entry: `node apitap.test.js` (root). No framework — assert + exit code. Timings in tests must space calls > 1500ms or burst-dedupe swallows them.
+- v1 survivors removed in v2: content.js, steps/variables machinery, token chaining, environment export. Re-add chaining later = re-introduce TOKEN_KEYS machinery + Postman authTestLines.
