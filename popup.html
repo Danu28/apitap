@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<title>ApiTap</title>
 <style>
   :root {
     --bg: #0b1220; --panel: #131c31; --panel-2: #18233c; --line: #24314c;
@@ -9,7 +10,7 @@
     --amber: #fbbf24; --rose: #fb7185; --violet: #a78bfa;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
+  body { margin: 0; width: 560px; background: var(--bg); color: var(--text);
     font: 13px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
   .method { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
@@ -17,7 +18,7 @@
     border-bottom: 1px solid var(--line); background: var(--panel); }
   h1 { font-size: 14px; margin: 0; letter-spacing: .02em; }
   #status { font-size: 11px; padding: 2px 9px; border-radius: 999px;
-    border: 1px solid var(--line); color: var(--dim); }
+    border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
   #status[data-state="recording"] { color: #b6f3d9; border-color: #2c5f4c; background: #12291f; }
 
   .controls { display: flex; gap: 8px; margin-left: auto; }
@@ -91,7 +92,7 @@
     <span>Deduped <b id="statDeduped">0</b></span>
   </div>
 
-  <div class="hint">Capture runs while DevTools is open. Check what to keep, then export — folders are grouped by endpoint.</div>
+  <div class="hint">Record attaches to this tab (Chrome shows a "debugging" bar while it runs). The popup closes while you use the page — recording continues; reopen ApiTap to review, check, and export.</div>
 
   <div class="pane"><div id="flowContainer" class="empty">No recording yet. Start recording, then use the page.</div></div>
 
@@ -101,6 +102,6 @@
   </div>
 
   <div id="toast" class="toast"></div>
-  <script src="panel.js"></script>
+  <script src="popup.js"></script>
 </body>
 </html>

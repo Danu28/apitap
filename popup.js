@@ -1,9 +1,9 @@
 /**
- * ApiTap — Panel controller
+ * ApiTap — Popup controller
  * Reads the session from the background worker, renders endpoint groups with
  * export checkboxes, and triggers the Postman export of the checked calls.
- * Selection state lives in the persisted session (the panel dies when
- * DevTools closes); this view only sends UPDATE_CHECKED and re-renders.
+ * The popup closes when the user returns to the page; recording continues in
+ * the service worker and this view re-syncs on every open via GET_SESSION.
  */
 (function () {
   'use strict';
@@ -63,7 +63,7 @@
   function updateStatus() {
     if (session.isRecording) {
       els.status.dataset.state = 'recording';
-      els.status.textContent = 'Recording';
+      els.status.textContent = 'Recording · tab ' + (session.recordingTabId != null ? session.recordingTabId : '?');
       els.btnStart.disabled = true;
       els.btnStop.disabled = false;
     } else {

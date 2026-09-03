@@ -4,6 +4,7 @@ const assert = require('assert');
 const NoiseFilter = require('./utils/filter.js');
 const Correlator = require('./utils/correlation.js');
 const Exporter = require('./utils/postman.js');
+const DebugCapture = require('./utils/debugcapture.js');
 
 const t = (name, fn) => {
   try { fn(); console.log('PASS', name); }
@@ -167,6 +168,44 @@ t('export is Postman-native: URL breakdown, params, auth, valid variable type', 
   const post = col.item.find((f) => f.name === 'POST /users').item[0];
   assert.strictEqual(post.request.body.mode, 'raw');
   assert.strictEqual(post.request.url.host[0], 'api');
+});
+
+t('debugger events map to an apiCall (incl. base64 body decode)', () => {
+  const rec = DebugCapture.requestStart({
+    requestId: 'r1', wallTime: 1700000000.123,
+    request: { method: 'POST', url: 'https://api.x.com/login', postData: '{"u":"a"}',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tkn' } }
+  });
+  assert.notStrictEqual(rec, null);
+  DebugCapture.responseReceived(rec, { response: { status: 200, headers: { 'Content-Type': 'application/json' } } });
+  const call = DebugCapture.finish(rec, btoa('{"token":"tok123"}'), true);
+  assert.strictEqual(call.method, 'POST');
+  assert.strictEqual(call.status, 200);
+  assert.deepStrictEqual(call.requestHeaders, [
+    { name: 'Content-Type', value: 'application/json' },
+    { name: 'Authorization', value: 'Bearer tkn' }
+  ]);
+  assert.strictEqual(call.requestBody, '{"u":"a"}');
+  assert.strictEqual(call.responseBody, '{"token":"tok123"}');
+  assert.strictEqual(call.ts, 1700000000123);
+});
+t('requestStart rejects url-less events; finish tolerates missing body', () => {
+  assert.strictEqual(DebugCapture.requestStart({ request: {} }), null);
+  const rec = DebugCapture.requestStart({ request: { url: 'https://x.com/noresp', method: 'GET' } });
+  const call = DebugCapture.finish(rec, null, false);
+  assert.strictEqual(call.responseBody, null);
+  assert.strictEqual(call.responseHeaders.length, 0);
+  assert.strictEqual(call.requestBody, null);
+});
+t('a captured debugger call flows into engine grouping + export (params intact)', () => {
+  const c = new Correlator();
+  const rec = DebugCapture.requestStart({ request: { url: 'https://api.x.com/users?page=2', method: 'GET', headers: {} } });
+  DebugCapture.responseReceived(rec, { response: { status: 200, headers: { 'Content-Type': 'application/json' } } });
+  c.addCall(DebugCapture.finish(rec, '{"ok":true}', false));
+  const col = Exporter.buildCollection(c);
+  const folder = col.item.find((f) => f.name === 'GET /users');
+  assert(folder);
+  assert.deepStrictEqual(folder.item[0].request.url.query, [{ key: 'page', value: '2' }]);
 });
 
 t('nothing checked -> empty collection, still valid JSON', () => {

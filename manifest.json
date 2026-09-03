@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "ApiTap — Postman Data Generator",
-  "version": "1.0.0",
-  "description": "Record the API calls a manual test run makes, group them by endpoint, pick what to keep, and export a Postman collection.",
+  "version": "1.1.0",
+  "description": "Record the API calls a manual test run makes on this tab, group them by endpoint, pick what to keep, and export a Postman collection.",
   "permissions": [
+    "debugger",
     "downloads",
     "storage",
     "unlimitedStorage"
@@ -11,6 +12,9 @@
   "background": {
     "service_worker": "background.js"
   },
-  "devtools_page": "devtools.html",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ApiTap"
+  },
   "incognito": "split"
 }

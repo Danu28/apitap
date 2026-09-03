@@ -1,18 +1,20 @@
 /**
  * ApiTap — Background service worker
- * Central hub: message router, recording state, session persistence,
- * endpoint grouping, and Postman export dispatch.
+ * Central hub: message router, recording state (debugger-attached tab), session
+ * persistence, endpoint grouping, and Postman export dispatch.
  * The service worker may be terminated at any moment (MV3), so every handler
  * awaits ensureSessionLoaded() before touching state.
  */
 'use strict';
 
-importScripts('utils/filter.js', 'utils/correlation.js', 'utils/postman.js');
+importScripts('utils/filter.js', 'utils/correlation.js', 'utils/postman.js', 'utils/debugcapture.js');
 
 const SESSION_STORAGE_KEY = 'apitapSession';
 
 let isRecording = false;
 let recordingStartTime = null;
+let recordingTabId = null;
+let pendingRequests = new Map(); // requestId -> in-flight capture record (never persisted)
 let correlator = null;
 let restoreStatePromise = restorePersistedSession();
 
@@ -23,7 +25,7 @@ function initCorrelator() {
 
 function broadcastUpdate() {
   try {
-    // Consume runtime.lastError: no panel open (or panel closing) is expected here.
+    // Consume runtime.lastError: no popup open (or popup closing) is expected here.
     chrome.runtime.sendMessage({ type: 'SESSION_UPDATED' }, () => void chrome.runtime.lastError);
   } catch (e) { /* no listeners */ }
 }
@@ -85,22 +87,106 @@ function downloadJson(filename, obj) {
   }).then(() => ({ success: true })).catch((e) => ({ success: false, error: e.message }));
 }
 
+/* ---------- debugger capture ---------- */
+
+async function attachDebugger(tabId) {
+  await chrome.debugger.attach({ tabId: tabId }, '1.3');
+  await chrome.debugger.sendCommand({ tabId: tabId }, 'Network.enable', {});
+}
+
+function clearCaptureState() {
+  recordingTabId = null;
+  pendingRequests = new Map();
+}
+
+// Captured CDP events flowing into the engine, in sw context (no messaging hop).
+function ingestApiCall(call) {
+  const c = correlator || initCorrelator();
+  try {
+    c.addCall(call);
+  } catch (e) {
+    console.debug('[ApiTap] ingest failed:', e.message);
+    return;
+  }
+  persistSession();
+  broadcastUpdate();
+}
+
+chrome.debugger.onDetach.addListener((source) => {
+  // The tab was detached under us (DevTools opened, another debugger took over,
+  // or the tab closed): stop recording gracefully rather than leave a dead state.
+  if (source.tabId === recordingTabId) {
+    isRecording = false;
+    clearCaptureState();
+    persistSession();
+    broadcastUpdate();
+  }
+});
+
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (!isRecording || !params || source.tabId !== recordingTabId) return;
+  switch (method) {
+    case 'Network.requestWillBeSent': {
+      const rec = DebugCapture.requestStart(params);
+      if (rec) pendingRequests.set(params.requestId, rec);
+      break;
+    }
+    case 'Network.responseReceived': {
+      const rec = pendingRequests.get(params.requestId);
+      if (rec) DebugCapture.responseReceived(rec, params);
+      break;
+    }
+    case 'Network.loadingFinished': {
+      const rec = pendingRequests.get(params.requestId);
+      if (!rec) break;
+      chrome.debugger.sendCommand({ tabId: recordingTabId }, 'Network.getResponseBody', { requestId: params.requestId })
+        .then((res) => {
+          pendingRequests.delete(params.requestId);
+          ingestApiCall(DebugCapture.finish(rec, res && res.body, res && res.base64Encoded));
+        })
+        .catch(() => {
+          // No body for this request (media/streams) — still record the call.
+          pendingRequests.delete(params.requestId);
+          ingestApiCall(DebugCapture.finish(rec, null, false));
+        });
+      break;
+    }
+  }
+});
+
 /* ---------- handlers ---------- */
 
 async function handleStartRecording(message, sendResponse) {
   await ensureSessionLoaded();
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs && tabs[0];
+  if (!tab || tab.id == null) {
+    sendResponse({ success: false, error: 'No active tab to record' });
+    return;
+  }
+  try {
+    await attachDebugger(tab.id);
+  } catch (e) {
+    sendResponse({ success: false, error: 'Could not record this tab: ' + e.message });
+    return;
+  }
   initCorrelator();
+  recordingTabId = tab.id;
+  pendingRequests = new Map();
   isRecording = true;
   recordingStartTime = Date.now();
   await persistSession();
-
-  sendResponse({ success: true, startedAt: recordingStartTime });
+  sendResponse({ success: true, startedAt: recordingStartTime, tabId: tab.id });
   broadcastUpdate();
 }
 
 async function handleStopRecording(message, sendResponse) {
   await ensureSessionLoaded();
   isRecording = false;
+  try {
+    if (recordingTabId != null) await chrome.debugger.detach({ tabId: recordingTabId });
+  } catch (e) { /* already detached */ }
+  clearCaptureState();
   await persistSession();
   sendResponse({ success: true, stoppedAt: Date.now() });
   broadcastUpdate();
@@ -109,22 +195,15 @@ async function handleStopRecording(message, sendResponse) {
 async function handleClearSession(message, sendResponse) {
   await ensureSessionLoaded();
   isRecording = false;
-  recordingStartTime = null;
+  try {
+    if (recordingTabId != null) await chrome.debugger.detach({ tabId: recordingTabId });
+  } catch (e) { /* already detached */ }
+  clearCaptureState();
   correlator = null;
+  recordingStartTime = null;
   await persistSession();
   sendResponse({ success: true });
   broadcastUpdate();
-}
-
-async function handleApiCall(message, sender, sendResponse) {
-  await ensureSessionLoaded();
-  if (!isRecording) { sendResponse && sendResponse({ success: false, reason: 'not-recording' }); return; }
-  const c = initCorrelator();
-  const call = message.apiCall || {};
-  c.addCall(call);
-  await persistSession();
-  broadcastUpdate();
-  sendResponse && sendResponse({ success: true });
 }
 
 async function handleUpdateChecked(message, sendResponse) {
@@ -142,6 +221,7 @@ function sessionSnapshot() {
   return {
     isRecording: isRecording,
     recordingStartTime: recordingStartTime,
+    recordingTabId: recordingTabId,
     calls: c.calls.map((call) => Object.assign({}, call, { groupKey: c.groupKey(call) })),
     stats: c.getStats()
   };
@@ -164,7 +244,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'GET_SESSION':
       ensureSessionLoaded().then(() => sendResponse({ success: true, session: sessionSnapshot() }));
       return true;
-    case 'API_CALL': handleApiCall(message, sender, sendResponse); return true;
     case 'UPDATE_CHECKED': handleUpdateChecked(message, sendResponse); return true;
     case 'EXPORT_POSTMAN': handleExport(message, sendResponse); return true;
     default:
