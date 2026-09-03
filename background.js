@@ -38,6 +38,7 @@ async function persistSession() {
       [SESSION_STORAGE_KEY]: {
         isRecording: isRecording,
         recordingStartTime: recordingStartTime,
+        recordingTabId: recordingTabId,
         engine: correlator ? correlator.serialize() : null
       }
     });
@@ -56,9 +57,26 @@ async function restorePersistedSession() {
     if (saved) {
       isRecording = !!saved.isRecording;
       recordingStartTime = saved.recordingStartTime || null;
+      recordingTabId = saved.recordingTabId || null;
       if (saved.engine) {
         const c = initCorrelator();
         c.mergeState(saved.engine);
+      }
+      // An SW restart mid-recording kills the debugger session: re-attach to
+      // the recorded tab. A stale tab (closed while the SW was down) or an
+      // old-schema session without a saved tab means the recording is over —
+      // correct the state instead of showing a dead "Recording".
+      if (isRecording && recordingTabId != null) {
+        try {
+          await attachDebugger(recordingTabId);
+        } catch (e) {
+          isRecording = false;
+          recordingTabId = null;
+          await persistSession();
+        }
+      } else if (isRecording) {
+        isRecording = false;
+        await persistSession();
       }
     }
   } catch (e) {
@@ -141,11 +159,15 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
       if (!rec) break;
       chrome.debugger.sendCommand({ tabId: recordingTabId }, 'Network.getResponseBody', { requestId: params.requestId })
         .then((res) => {
+          // Session guard: Stop/Clear swap in a fresh map while the body fetch
+          // is in flight — a requestId still present means THIS session asked.
+          if (!pendingRequests.has(params.requestId)) return;
           pendingRequests.delete(params.requestId);
           ingestApiCall(DebugCapture.finish(rec, res && res.body, res && res.base64Encoded));
         })
         .catch(() => {
           // No body for this request (media/streams) — still record the call.
+          if (!pendingRequests.has(params.requestId)) return;
           pendingRequests.delete(params.requestId);
           ingestApiCall(DebugCapture.finish(rec, null, false));
         });
@@ -164,17 +186,22 @@ async function handleStartRecording(message, sendResponse) {
     sendResponse({ success: false, error: 'No active tab to record' });
     return;
   }
+  // State first so events flowing in right after Network.enable are captured
+  // (no dead window); revert everything if the attach itself fails.
+  recordingStartTime = Date.now();
+  recordingTabId = tab.id;
+  pendingRequests = new Map();
+  isRecording = true;
   try {
     await attachDebugger(tab.id);
   } catch (e) {
+    isRecording = false;
+    recordingTabId = null;
+    pendingRequests = new Map();
     sendResponse({ success: false, error: 'Could not record this tab: ' + e.message });
     return;
   }
   initCorrelator();
-  recordingTabId = tab.id;
-  pendingRequests = new Map();
-  isRecording = true;
-  recordingStartTime = Date.now();
   await persistSession();
   sendResponse({ success: true, startedAt: recordingStartTime, tabId: tab.id });
   broadcastUpdate();

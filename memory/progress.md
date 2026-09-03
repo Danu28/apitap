@@ -41,4 +41,11 @@ T11. Noise is now stored, not discarded — user decides via checkboxes → veri
 
 T12. Popup UI replaces DevTools panel; capture via chrome.debugger (CDP) → verify: 18/18 suite green incl. 3 new DebugCapture tests (event→apiCall mapping, base64 decode, end-to-end into export); manifest valid 1.1.0; dead devtools/panel refs gone — passed
    files: +popup.html, +popup.js, +utils/debugcapture.js, -devtools.html, -devtools.js, -panel.html, -panel.js, manifest.json, background.js, apitap.test.js
-   Changes: manifest action popup, permissions +debugger (no more devtools_page; still no host_permissions); background attaches debugger to active tab on Record, Network.enable, maps requestWillBeSent/responseReceived/loadingFinished + getResponseBody → engine (no messaging hop); onDetach stops recording gracefully; sessionSnapshot carries recordingTabId (popup shows 'Recording · tab N'); popup auto-closes on page interaction — recording continues in SW. Honest gap: debugger attach/events need a live browser smoke (CDP wiring is chrome-glue; the pure mapping is tested).
+   Changes: manifest action popup, permissions +debugger; background attaches debugger to active tab on Record, Network.enable, maps CDP events → engine (no messaging hop); onDetach stops recording gracefully; sessionSnapshot carries recordingTabId; popup auto-closes on page interaction — recording continues in SW.
+
+T13. Fix all verification findings (B1-B4) → verify: 20/20 suite green (2 new: text vs binary base64 handling); syntax clean — passed
+   files: background.js, utils/debugcapture.js, utils/correlation.js, apitap.test.js
+   B1: getResponseBody callbacks guarded by `pendingRequests.has(requestId)` — no phantom calls into a Stop/Clear'd (or recreated) session.
+   B2: recordingTabId persisted; restore re-attaches debugger to the recorded tab, else marks the session stopped — no dead "Recording · tab ?" after SW restarts or old-schema sessions.
+   B3: recording state set before Network.enable (revert on attach failure) — no dead capture window at start.
+   B4: binary base64 bodies keep raw base64 + responseIsBase64 flag instead of UTF-8 mojibake (text still decodes; engine carries the flag).

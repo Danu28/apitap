@@ -197,6 +197,24 @@ t('requestStart rejects url-less events; finish tolerates missing body', () => {
   assert.strictEqual(call.responseHeaders.length, 0);
   assert.strictEqual(call.requestBody, null);
 });
+t('text base64 bodies still decode; flag stays false', () => {
+  const rec = DebugCapture.requestStart({ request: { url: 'https://api.x.com/data', method: 'GET', headers: {} } });
+  const call = DebugCapture.finish(rec, btoa('{"ok":1}'), true);
+  assert.strictEqual(call.responseIsBase64, false);
+  assert.strictEqual(call.responseBody, '{"ok":1}');
+});
+t('binary base64 bodies keep raw base64 + flag, no mojibake', () => {
+  const rec = DebugCapture.requestStart({ request: { url: 'https://api.x.com/file.pdf', method: 'GET', headers: {} } });
+  const b64 = btoa('\x89PNG\r\n\x1a\n' + '\x00'.repeat(8)); // not valid UTF-8
+  const call = DebugCapture.finish(rec, b64, true);
+  assert.strictEqual(call.responseIsBase64, true);
+  assert.strictEqual(call.responseBody, b64);
+  // engine keeps the flag end-to-end
+  const c = new Correlator();
+  c.addCall(call);
+  assert.strictEqual(c.calls[0].responseIsBase64, true);
+});
+
 t('a captured debugger call flows into engine grouping + export (params intact)', () => {
   const c = new Correlator();
   const rec = DebugCapture.requestStart({ request: { url: 'https://api.x.com/users?page=2', method: 'GET', headers: {} } });

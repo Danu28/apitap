@@ -66,6 +66,7 @@
       // Noise bodies are skipped: base64 images/media would balloon the
       // session and are never useful for export.
       responseBody: noiseReason ? null : truncateBody(rawCall.responseBody),
+      responseIsBase64: !!rawCall.responseIsBase64,
       ts: now,
       checked: !noiseReason,
       noiseReason: noiseReason || undefined
