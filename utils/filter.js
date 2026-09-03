@@ -1,7 +1,7 @@
 /**
  * ApiTap — NoiseFilter
- * Decides whether a captured network call is "API traffic worth exporting"
- * or noise (static assets, analytics/telemetry, tracking params).
+ * Decides whether a captured network call is "API traffic worth keeping"
+ * or noise (static assets, analytics/telemetry).
  * Dual-exported for the service worker (globalThis) and Node tests (module.exports).
  */
 (function (root, factory) {
@@ -41,12 +41,6 @@
     'googlesyndication'
   ];
 
-  const TRACKING_PARAMS = [
-    'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-    'utm_id', 'gclid', 'dclid', 'fbclid', 'gbraid', 'wbraid', 'igshid',
-    'mc_cid', 'mc_eid', 'ref', 'source', 'spm', 'zanpid', 'hsCtaTracking', 'ncid'
-  ];
-
   function hostFromUrl(url) {
     try {
       return new URL(url).hostname;
@@ -75,11 +69,6 @@
     return !!ctype && ASSET_CONTENT_TYPES.some((t) => ctype.includes(t));
   }
 
-  function isStaticAsset(apiCall) {
-    if (!apiCall) return false;
-    return hasAssetExtension(apiCall.url) || hasAssetContentType(apiCall);
-  }
-
   /**
    * Why a call is noise: 'telemetry' | 'asset-extension' | 'asset-content-type'
    * | 'no-url', or null when it is API traffic worth keeping.
@@ -92,50 +81,14 @@
     return null;
   }
 
-  /**
-   * Should this call be dropped from the export entirely?
-   */
-  function isNoise(apiCall) {
-    return filterReason(apiCall) !== null;
-  }
-
-  /**
-   * Returns a cleaned copy of the URL with tracking params removed.
-   */
-  function stripTrackingParams(url) {
-    if (!url || !url.includes('?')) return url;
-    try {
-      const u = new URL(url);
-      const clean = new URL(url);
-      for (const key of TRACKING_PARAMS) clean.searchParams.delete(key);
-      return clean.toString();
-    } catch (e) {
-      // Naive string fallback for malformed URLs.
-      let base = url.split('?')[0];
-      const query = url.split('?')[1];
-      if (!query) return url;
-      const kept = query.split('&').filter((pair) => {
-        const k = pair.split('=')[0];
-        return k && !TRACKING_PARAMS.includes(k);
-      });
-      return kept.length ? base + '?' + kept.join('&') : base;
-    }
-  }
-
-  /**
-   * Should this call be dropped from the export entirely?
-   */
+  /** Should this call be dropped from the export entirely? */
   function isNoise(apiCall) {
     return filterReason(apiCall) !== null;
   }
 
   return {
     isNoise: isNoise,
-    isStaticAsset: isStaticAsset,
     isTelemetry: isTelemetry,
-    filterReason: filterReason,
-    stripTrackingParams: stripTrackingParams,
-    TELEMETRY_DOMAINS: TELEMETRY_DOMAINS,
-    ASSET_EXTENSIONS: ASSET_EXTENSIONS
+    filterReason: filterReason
   };
 });

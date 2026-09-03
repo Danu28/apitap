@@ -16,12 +16,12 @@
     ? module.require('./filter.js')
     : globalThis.NoiseFilter;
   const MAX_BODY_CHARS = 200000; // ~200KB of text per body
+  const DEDUPE_WINDOW_MS = 1500; // identical repeat within this window is a burst
 
   function Correlator() {
     this.calls = [];       // all stored calls; noise-qualified ones are unchecked
     this.filtered = 0;     // stored-noise count (visible in stats)
     this.deduped = 0;      // burst-duplicate count
-    this.dedupeWindowMs = 1500;
     this.dedupeKeyToTs = {}; // fingerprint -> last ts (not persisted)
   }
 
@@ -31,8 +31,6 @@
     if (str.length <= MAX_BODY_CHARS) return str;
     return str.slice(0, MAX_BODY_CHARS) + '\n// [ApiTap] truncated (' + str.length + ' chars total)';
   }
-
-  Correlator.MAX_BODY_CHARS = MAX_BODY_CHARS;
 
   /* ---------- ingestion ---------- */
 
@@ -47,7 +45,7 @@
     // Burst-dedupe: same method|host|path|status within the window is a repeat.
     const fp = this.fingerprint(rawCall);
     const now = rawCall.ts || Date.now();
-    if (this.dedupeKeyToTs[fp] && (now - this.dedupeKeyToTs[fp]) < this.dedupeWindowMs) {
+    if (this.dedupeKeyToTs[fp] && (now - this.dedupeKeyToTs[fp]) < DEDUPE_WINDOW_MS) {
       this.deduped++;
       return null;
     }
@@ -58,7 +56,7 @@
     const call = {
       id: 'c' + (this.calls.length + 1),
       method: rawCall.method || 'GET',
-      url: NoiseFilter.stripTrackingParams(rawCall.url || ''),
+      url: rawCall.url || '',
       status: rawCall.status != null ? rawCall.status : null,
       requestHeaders: rawCall.requestHeaders || [],
       responseHeaders: rawCall.responseHeaders || [],
@@ -66,7 +64,6 @@
       // Noise bodies are skipped: base64 images/media would balloon the
       // session and are never useful for export.
       responseBody: noiseReason ? null : truncateBody(rawCall.responseBody),
-      responseIsBase64: !!rawCall.responseIsBase64,
       ts: now,
       checked: !noiseReason,
       noiseReason: noiseReason || undefined

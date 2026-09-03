@@ -40,7 +40,7 @@
     for (const o of Object.keys(tally)) {
       if (tally[o] > bestCount) { best = o; bestCount = tally[o]; }
     }
-    return { origin: best, count: bestCount };
+    return best; // most-common origin, or null
   }
 
   function lastPathSegment(url) {
@@ -173,7 +173,7 @@
    */
   function buildCollection(correlator) {
     const calls = (correlator.calls || []).filter((c) => c.checked !== false);
-    const { origin: baseUrl } = commonOrigin(calls.map((c) => c.url));
+    const baseUrl = commonOrigin(calls.map((c) => c.url));
 
     const groups = new Map();
     for (const call of calls) {
@@ -203,7 +203,6 @@
 
   return {
     COLLECTION_SCHEMA: COLLECTION_SCHEMA,
-    commonOrigin: commonOrigin,
     buildCollection: buildCollection
   };
 });

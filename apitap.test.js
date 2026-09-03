@@ -42,8 +42,10 @@ t('noise stats still count stored noise; mergeState keeps noise unchecked', () =
   restored.mergeState(c.serialize());
   assert(restored.calls.every((x) => x.checked === false && x.noiseReason === 'asset-extension'));
 });
-t('tracking params stripped', () => {
-  assert.strictEqual(NoiseFilter.stripTrackingParams('https://x.com/a?utm_source=x&real=1&gclid=y'), 'https://x.com/a?real=1');
+t('tracking params are preserved (capture truth, no silent mutation)', () => {
+  const c = new Correlator();
+  c.addCall({ method: 'GET', url: 'https://api.x.com/a?utm_source=x&real=1&gclid=y', ts: 1000 });
+  assert.strictEqual(c.calls[0].url, 'https://api.x.com/a?utm_source=x&real=1&gclid=y');
 });
 
 /* ---- engine ---- */
@@ -197,22 +199,19 @@ t('requestStart rejects url-less events; finish tolerates missing body', () => {
   assert.strictEqual(call.responseHeaders.length, 0);
   assert.strictEqual(call.requestBody, null);
 });
-t('text base64 bodies still decode; flag stays false', () => {
+t('text base64 bodies still decode', () => {
   const rec = DebugCapture.requestStart({ request: { url: 'https://api.x.com/data', method: 'GET', headers: {} } });
   const call = DebugCapture.finish(rec, btoa('{"ok":1}'), true);
-  assert.strictEqual(call.responseIsBase64, false);
   assert.strictEqual(call.responseBody, '{"ok":1}');
 });
-t('binary base64 bodies keep raw base64 + flag, no mojibake', () => {
+t('binary base64 bodies keep raw base64, no mojibake', () => {
   const rec = DebugCapture.requestStart({ request: { url: 'https://api.x.com/file.pdf', method: 'GET', headers: {} } });
   const b64 = btoa('\x89PNG\r\n\x1a\n' + '\x00'.repeat(8)); // not valid UTF-8
   const call = DebugCapture.finish(rec, b64, true);
-  assert.strictEqual(call.responseIsBase64, true);
   assert.strictEqual(call.responseBody, b64);
-  // engine keeps the flag end-to-end
   const c = new Correlator();
   c.addCall(call);
-  assert.strictEqual(c.calls[0].responseIsBase64, true);
+  assert.strictEqual(c.calls[0].responseBody, b64);
 });
 
 t('a captured debugger call flows into engine grouping + export (params intact)', () => {

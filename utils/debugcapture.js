@@ -56,20 +56,14 @@
   /**
    * Network.loadingFinished (or failed body fetch) -> final apiCall.
    * body/base64Encoded come from Network.getResponseBody; on failure pass null.
-   * Text bodies decode to strings; binary payloads (PDF/zip/image) keep the raw
-   * base64 and set responseIsBase64 so consumers never see UTF-8 mojibake.
+   * Text bodies decode to strings; binary payloads keep their raw base64 so the
+   * session never stores UTF-8 mojibake.
    */
   function finish(record, body, base64Encoded) {
     let responseBody = body || null;
-    let responseIsBase64 = false;
     if (base64Encoded) {
       const decoded = decodeBase64(body || '');
-      if (decoded === null) {
-        responseBody = body || '';
-        responseIsBase64 = true;
-      } else {
-        responseBody = decoded;
-      }
+      responseBody = decoded === null ? (body || '') : decoded;
     }
     return {
       method: record.method || 'GET',
@@ -79,7 +73,6 @@
       responseHeaders: record.responseHeaders || [],
       requestBody: record.postData || null,
       responseBody: responseBody,
-      responseIsBase64: responseIsBase64,
       ts: record.wallTime ? Math.round(record.wallTime * 1000) : Date.now()
     };
   }

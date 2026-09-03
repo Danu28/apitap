@@ -48,4 +48,8 @@ T13. Fix all verification findings (B1-B4) → verify: 20/20 suite green (2 new:
    B1: getResponseBody callbacks guarded by `pendingRequests.has(requestId)` — no phantom calls into a Stop/Clear'd (or recreated) session.
    B2: recordingTabId persisted; restore re-attaches debugger to the recorded tab, else marks the session stopped — no dead "Recording · tab ?" after SW restarts or old-schema sessions.
    B3: recording state set before Network.enable (revert on attach failure) — no dead capture window at start.
-   B4: binary base64 bodies keep raw base64 + responseIsBase64 flag instead of UTF-8 mojibake (text still decodes; engine carries the flag).
+   B4: binary base64 bodies keep raw base64 (no UTF-8 mojibake); text still decodes.
+
+T14. First-principles audit deletions + CI → verify: 20/20 suite green (tracking-params test replaced with preserve-truth assert); exports trimmed to consumed surface; manifest/syntax clean — passed
+   files: utils/filter.js, utils/correlation.js, utils/postman.js, utils/debugcapture.js, manifest.json, apitap.test.js, +.github/workflows/test.yml, memory/knowledge.md
+   Deleted: stripTrackingParams+TRACKING_PARAMS (URLs stored as captured), responseIsBase64 flag (no consumer), commonOrigin count + unused exports (isStaticAsset, TELEMETRY_DOMAINS, ASSET_EXTENSIONS, MAX_BODY_CHARS, commonOrigin), duplicate isNoise in filter.js, manifest incognito:'split' (MV3 default), dedupeWindowMs → module const. Added: CI workflow running the suite on push/PR. Guardrail recorded: 0 unused exports.
