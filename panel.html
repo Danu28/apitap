@@ -28,8 +28,15 @@
   button.primary { background: #16324f; border-color: #2b4a7a; color: #bfdbfe; }
 
   .stats { display: flex; gap: 16px; padding: 8px 14px; border-bottom: 1px solid var(--line);
-    background: var(--panel); font-size: 12px; color: var(--dim); }
+    background: var(--panel); font-size: 12px; color: var(--dim); align-items: center; }
   .stats b { color: var(--text); font-weight: 600; }
+  .stat-btn { background: none; border: none; padding: 0; font: inherit; color: var(--dim); cursor: pointer; }
+  .stat-btn:hover:not(:disabled) { color: var(--text); }
+  .stat-btn:disabled { opacity: .5; cursor: default; }
+  .filtered-head { color: var(--dim); font-size: 12px; padding-bottom: 8px; }
+  .filtered-row { display: flex; align-items: center; gap: 8px; padding: 4px 0;
+    border-bottom: 1px solid var(--line); font-size: 12px; }
+  .filtered-row .call-url { flex: 1; }
 
   .hint { color: var(--dim); font-size: 12px; padding: 8px 14px 0; }
   .pane { padding: 12px 14px; }
@@ -79,13 +86,18 @@
   <div class="stats">
     <span>Requests <b id="statCalls">0</b></span>
     <span>Groups <b id="statGroups">0</b></span>
-    <span>Filtered <b id="statFiltered">0</b></span>
+    <button id="btnFiltered" class="stat-btn" disabled>Filtered <b id="statFiltered">0</b></button>
     <span>Deduped <b id="statDeduped">0</b></span>
   </div>
 
   <div class="hint">Capture runs while DevTools is open. Check what to keep, then export — folders are grouped by endpoint.</div>
 
   <div class="pane"><div id="flowContainer" class="empty">No recording yet. Start recording, then use the page.</div></div>
+
+  <div id="filteredWrap" class="pane hidden">
+    <div class="filtered-head">Dropped as noise — assets &amp; telemetry (most recent first)</div>
+    <div id="filteredList"></div>
+  </div>
 
   <div id="toast" class="toast"></div>
   <script src="panel.js"></script>

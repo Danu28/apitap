@@ -143,6 +143,7 @@ function sessionSnapshot() {
     isRecording: isRecording,
     recordingStartTime: recordingStartTime,
     calls: c.calls.map((call) => Object.assign({}, call, { groupKey: c.groupKey(call) })),
+    filteredCalls: c.filteredCalls || [],
     stats: c.getStats()
   };
 }

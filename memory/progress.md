@@ -30,3 +30,7 @@ T8. Fix export for MV3 (downloadJson: Blob/URL.createObjectURL → base64 data U
 T9. Enrich Postman export to full v2.1 fidelity → verify: 11/11 suite green; official v2.1.0 JSON-schema validation (ajv draft-04) returns valid — passed
    files: utils/postman.js, apitap.test.js
    Changes: URL object now carries protocol/host/path/query(params)/hash/variable breakdown parsed from the concrete URL (raw keeps the {{baseUrl}} form); structured request.auth (bearer/basic) recognized from the Authorization header (header kept too — same value); items carry response: []; collection variable type fixed 'default'→'string' (the enum in v2.1; 'default' was schema-INVALID and the likely import blocker).
+
+T10. Filter hygiene + transparency → verify: 14/14 suite green; probe: api.1stdibsdata.com kept, bundle.js dropped by extension, telemetry still dropped; filteredCalls capped at 200 with reasons — passed
+   files: utils/filter.js, utils/correlation.js, background.js, panel.js, panel.html, apitap.test.js
+   Changes: exact/subdomain-only telemetry host matching (killed host.includes over-match); purged junk entries ('1stdibs','qquared','crashtrace','gtag') and dead '/'-entries; '.js' added to ASSET_EXTENSIONS; filterReason() classifies drops; engine records dropped calls (url+reason, cap 200, in-memory); panel: clickable Filtered stat opens the dropped-list pane.

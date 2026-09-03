@@ -14,6 +14,7 @@
     btnClear: $('btnClear'), btnExport: $('btnExport'),
     statCalls: $('statCalls'), statGroups: $('statGroups'),
     statFiltered: $('statFiltered'), statDeduped: $('statDeduped'),
+    btnFiltered: $('btnFiltered'), filteredList: $('filteredList'),
     flowContainer: $('flowContainer'), toast: $('toast')
   };
 
@@ -160,10 +161,32 @@
     }
   }
 
+  function renderFiltered() {
+    const dropped = session.filteredCalls || [];
+    els.btnFiltered.disabled = !dropped.length;
+    const host = els.filteredList;
+    host.innerHTML = '';
+    for (const d of dropped.slice(-50).reverse()) {
+      const row = document.createElement('div');
+      row.className = 'filtered-row';
+      const pill = document.createElement('span');
+      pill.className = 'pill';
+      pill.textContent = d.reason;
+      const u = document.createElement('span');
+      u.className = 'call-url';
+      u.title = d.url;
+      u.textContent = d.url;
+      row.appendChild(pill);
+      row.appendChild(u);
+      host.appendChild(row);
+    }
+  }
+
   function render() {
     updateStatus();
     updateStats();
     renderFlow();
+    renderFiltered();
   }
 
   /* ---------- actions ---------- */
@@ -185,6 +208,10 @@
     await send({ type: 'CLEAR_SESSION' });
     toast('Session cleared');
     fetchSession();
+  });
+
+  els.btnFiltered.addEventListener('click', () => {
+    $('filteredWrap').classList.toggle('hidden');
   });
 
   els.btnExport.addEventListener('click', async () => {

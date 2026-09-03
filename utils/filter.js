@@ -17,7 +17,7 @@
     // fonts
     '.woff', '.woff2', '.ttf', '.otf', '.eot',
     // styles / scripts / media
-    '.css', '.mjs', '.map', '.mp3', '.mp4', '.webm', '.ogg', '.wav', '.flv', '.m4a',
+    '.css', '.js', '.mjs', '.map', '.mp3', '.mp4', '.webm', '.ogg', '.wav', '.flv', '.m4a',
     '.manifest', '.appcache', '.webmanifest'
   ];
 
@@ -28,15 +28,17 @@
   ];
 
   // Domains that carry telemetry / analytics / product-metrics — never test data.
+  // Matched exact or as a subdomain (.d) only; no substring matching (that
+  // false-flagged hosts like api.1stdibsdata.com via leftover junk entries).
   const TELEMETRY_DOMAINS = [
     'googletagmanager.com', 'google-analytics.com', 'analytics.google.com',
     'doubleclick.net', 'hotjar.com', 'mixpanel.com', 'segment.io', 'segment.com',
     'amplitude.com', 'sentry.io', 'newrelic.com', 'bugsnag.com', 'fullstory.com',
     'clicktale.net', 'mouseflow.com', 'posthog.com', 'logrocket.com', 'matomo.cloud',
-    'crashtrace', 'crashlytics', 'clarity.ms', 'inspectlet.com', 'smartlook.com',
-    'datadoghq.com', 'nr-data.net', 'browser-intake-datadoghq.com', '1stdibs',
-    'qquared', 'quantcast.com', 'chartbeat.com', 'linkedin.com/analytics',
-    'beacon.krxd.net', 'sc-static.net', 'facebook.net/tr', 'gtag', 'googlesyndication'
+    'crashlytics', 'clarity.ms', 'inspectlet.com', 'smartlook.com',
+    'datadoghq.com', 'nr-data.net', 'browser-intake-datadoghq.com',
+    'quantcast.com', 'chartbeat.com', 'beacon.krxd.net', 'sc-static.net',
+    'googlesyndication'
   ];
 
   const TRACKING_PARAMS = [
@@ -55,25 +57,46 @@
 
   function isTelemetry(url) {
     const host = hostFromUrl(url).toLowerCase();
-    return TELEMETRY_DOMAINS.some((d) => host === d || host.endsWith('.' + d) || host.includes(d));
+    return TELEMETRY_DOMAINS.some((d) => host === d || host.endsWith('.' + d));
   }
 
-  function isStaticAsset(apiCall) {
-    const url = (apiCall && apiCall.url) || '';
+  function hasAssetExtension(url) {
     let pathname = '';
     try {
       pathname = new URL(url).pathname.toLowerCase();
     } catch (e) {}
+    return ASSET_EXTENSIONS.some((ext) => pathname.endsWith(ext));
+  }
 
-    if (ASSET_EXTENSIONS.some((ext) => pathname.endsWith(ext))) return true;
-
+  function hasAssetContentType(apiCall) {
     const ctype = (apiCall.responseHeaders || [])
       .filter((h) => h && h.name && h.name.toLowerCase() === 'content-type')
       .map((h) => h.value.split(';')[0].trim().toLowerCase()).join(',');
+    return !!ctype && ASSET_CONTENT_TYPES.some((t) => ctype.includes(t));
+  }
 
-    if (ctype && ASSET_CONTENT_TYPES.some((t) => ctype.includes(t))) return true;
+  function isStaticAsset(apiCall) {
+    if (!apiCall) return false;
+    return hasAssetExtension(apiCall.url) || hasAssetContentType(apiCall);
+  }
 
-    return false;
+  /**
+   * Why a call is noise: 'telemetry' | 'asset-extension' | 'asset-content-type'
+   * | 'no-url', or null when it is API traffic worth keeping.
+   */
+  function filterReason(apiCall) {
+    if (!apiCall || !apiCall.url) return 'no-url';
+    if (isTelemetry(apiCall.url)) return 'telemetry';
+    if (hasAssetExtension(apiCall.url)) return 'asset-extension';
+    if (hasAssetContentType(apiCall)) return 'asset-content-type';
+    return null;
+  }
+
+  /**
+   * Should this call be dropped from the export entirely?
+   */
+  function isNoise(apiCall) {
+    return filterReason(apiCall) !== null;
   }
 
   /**
@@ -103,16 +126,14 @@
    * Should this call be dropped from the export entirely?
    */
   function isNoise(apiCall) {
-    if (!apiCall || !apiCall.url) return true;
-    if (isTelemetry(apiCall.url)) return true;
-    if (isStaticAsset(apiCall)) return true;
-    return false;
+    return filterReason(apiCall) !== null;
   }
 
   return {
     isNoise: isNoise,
     isStaticAsset: isStaticAsset,
     isTelemetry: isTelemetry,
+    filterReason: filterReason,
     stripTrackingParams: stripTrackingParams,
     TELEMETRY_DOMAINS: TELEMETRY_DOMAINS,
     ASSET_EXTENSIONS: ASSET_EXTENSIONS

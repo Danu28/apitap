@@ -13,9 +13,32 @@ const t = (name, fn) => {
 /* ---- filter ---- */
 t('telemetry + assets are noise, API calls are not', () => {
   assert(NoiseFilter.isNoise({ url: 'https://www.google-analytics.com/collect' }));
+  assert(NoiseFilter.isNoise({ url: 'https://o123.ingest.sentry.io/api/42/envelope/' }));
   assert(NoiseFilter.isNoise({ url: 'https://x.com/app.css' }));
+  assert(NoiseFilter.isNoise({ url: 'https://x.com/app.js' })); // .js extension now covered
   assert(NoiseFilter.isNoise({ url: 'https://x.com/pixel.png' }));
   assert(!NoiseFilter.isNoise({ url: 'https://api.x.com/v1/users' }));
+});
+t('host matching is exact/subdomain only — junk entries purged', () => {
+  assert(!NoiseFilter.isNoise({ url: 'https://api.1stdibsdata.com/v1/items' }));
+  assert(!NoiseFilter.isNoise({ url: 'https://my-gtag-host.com/x' }));
+  assert(!NoiseFilter.isNoise({ url: 'https://shop.1stdibs.com/api' }));
+  assert(NoiseFilter.isNoise({ url: 'https://sub.sentry.io/ingest' })); // real subdomain still drops
+});
+t('filterReason classifies drops', () => {
+  const mk = (url, ct) => ({ url: url, responseHeaders: ct ? [{ name: 'Content-Type', value: ct }] : [] });
+  assert.strictEqual(NoiseFilter.filterReason(mk('https://x.com/app.css')), 'asset-extension');
+  assert.strictEqual(NoiseFilter.filterReason(mk('https://x.com/data', 'image/png')), 'asset-content-type');
+  assert.strictEqual(NoiseFilter.filterReason(mk('https://www.google-analytics.com/collect')), 'telemetry');
+  assert.strictEqual(NoiseFilter.filterReason(mk('https://api.x.com/v1/users', 'application/json')), null);
+});
+t('dropped calls are recorded with reason, capped at 200', () => {
+  const c = new Correlator();
+  for (let i = 0; i < 205; i++) c.addCall({ method: 'GET', url: 'https://x.com/pixel' + (i % 2) + '.png', ts: i * 2000 + 1 });
+  assert.strictEqual(c.filtered, 205);
+  assert.strictEqual(c.filteredCalls.length, 200);
+  assert.strictEqual(c.filteredCalls[0].reason, 'asset-extension');
+  assert(c.filteredCalls.every((d) => d.url && d.ts));
 });
 t('tracking params stripped', () => {
   assert.strictEqual(NoiseFilter.stripTrackingParams('https://x.com/a?utm_source=x&real=1&gclid=y'), 'https://x.com/a?real=1');

@@ -20,6 +20,7 @@
   function Correlator() {
     this.calls = [];       // accepted calls (noise removed), each checked by default
     this.filtered = 0;     // dropped-noise count
+    this.filteredCalls = []; // dropped calls with reason (diagnostic, capped, not persisted)
     this.deduped = 0;      // burst-duplicate count
     this.dedupeWindowMs = 1500;
     this.dedupeKeyToTs = {}; // fingerprint -> last ts (not persisted)
@@ -40,8 +41,10 @@
    * Ingest one captured call. Returns the stored call or null if dropped.
    */
   Correlator.prototype.addCall = function (rawCall) {
-    if (!rawCall || NoiseFilter.isNoise(rawCall)) {
+    const dropReason = rawCall ? NoiseFilter.filterReason(rawCall) : 'no-url';
+    if (dropReason) {
       this.filtered++;
+      this.rememberDropped(rawCall, dropReason);
       return null;
     }
 
@@ -78,6 +81,16 @@
       path = u.pathname;
     } catch (e) {}
     return (call.method || 'GET') + '|' + host + '|' + path + '|' + (call.status != null ? call.status : '');
+  };
+
+  // Diagnostic record of dropped calls (in-memory only, capped, not persisted).
+  Correlator.prototype.rememberDropped = function (rawCall, reason) {
+    this.filteredCalls.push({
+      url: rawCall && rawCall.url ? rawCall.url : '',
+      reason: reason,
+      ts: (rawCall && rawCall.ts) || Date.now()
+    });
+    if (this.filteredCalls.length > 200) this.filteredCalls.shift();
   };
 
   /* ---------- grouping ---------- */
