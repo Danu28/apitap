@@ -53,3 +53,6 @@ T13. Fix all verification findings (B1-B4) → verify: 20/20 suite green (2 new:
 T14. First-principles audit deletions + CI → verify: 20/20 suite green (tracking-params test replaced with preserve-truth assert); exports trimmed to consumed surface; manifest/syntax clean — passed
    files: utils/filter.js, utils/correlation.js, utils/postman.js, utils/debugcapture.js, manifest.json, apitap.test.js, +.github/workflows/test.yml, memory/knowledge.md
    Deleted: stripTrackingParams+TRACKING_PARAMS (URLs stored as captured), responseIsBase64 flag (no consumer), commonOrigin count + unused exports (isStaticAsset, TELEMETRY_DOMAINS, ASSET_EXTENSIONS, MAX_BODY_CHARS, commonOrigin), duplicate isNoise in filter.js, manifest incognito:'split' (MV3 default), dedupeWindowMs → module const. Added: CI workflow running the suite on push/PR. Guardrail recorded: 0 unused exports.
+
+T15. Meaningful unique export filenames → verify: 21/21 suite green (new filename test: api.shop.com → apitap-api-shop-com-20260903-193011.json, timestamp differentiates, session fallback); syntax clean — passed
+   files: utils/postman.js (suggestFilename — pure, exported), background.js (handleExport uses it), apitap.test.js, README.md

@@ -19,7 +19,7 @@ Creating a proper CRX/Web Store build is a follow-up; for now this is a load-unp
 2. **Record** — attaches to the active tab. Chrome shows a small "debugging this browser" bar while it runs (that's the `debugger` permission doing its job)
 3. Drive the page. The popup closes while you do — recording continues in the background
 4. Reopen ApiTap: requests are **grouped by endpoint** (`METHOD host/path`, query collapsed); check/uncheck anything, including calls it flagged as noise
-5. **Export selected** — downloads `apitap-collection.json` (Postman v2.1): one folder per endpoint group, full URL breakdown (params), structured bearer/basic auth from the captured `Authorization` header, `{{baseUrl}}` collection variable
+5. **Export selected** — downloads `apitap-<host>-<date>-<time>.json` (e.g. `apitap-api-shop-com-20260903-193011.json`; Postman v2.1): one folder per endpoint group, full URL breakdown (params), structured bearer/basic auth from the captured `Authorization` header, `{{baseUrl}}` collection variable
 
 ## What you should know
 

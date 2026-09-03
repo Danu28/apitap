@@ -201,8 +201,28 @@
     };
   }
 
+  /**
+   * Meaningful, unique export filename: apitap-<origin-host>-<local-ts>.json.
+   * Host comes from the collection's baseUrl variable; 'session' when absent.
+   */
+  function suggestFilename(collection, now) {
+    const t = now || new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    let host = '';
+    const baseUrl = ((collection && collection.variable) || []).find((v) => v.key === 'baseUrl');
+    if (baseUrl && baseUrl.value) {
+      try {
+        host = new URL(baseUrl.value).hostname.replace(/[^a-z0-9-]/gi, '-');
+      } catch (e) {}
+    }
+    const stamp = t.getFullYear() + p(t.getMonth() + 1) + p(t.getDate()) + '-' +
+      p(t.getHours()) + p(t.getMinutes()) + p(t.getSeconds());
+    return 'apitap-' + (host || 'session') + '-' + stamp + '.json';
+  }
+
   return {
     COLLECTION_SCHEMA: COLLECTION_SCHEMA,
+    suggestFilename: suggestFilename,
     buildCollection: buildCollection
   };
 });

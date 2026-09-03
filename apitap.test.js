@@ -225,6 +225,15 @@ t('a captured debugger call flows into engine grouping + export (params intact)'
   assert.deepStrictEqual(folder.item[0].request.url.query, [{ key: 'page', value: '2' }]);
 });
 
+t('export filenames are meaningful + unique', () => {
+  const col = { variable: [{ key: 'baseUrl', value: 'https://api.shop.com' }] };
+  const t1 = new Date(2026, 8, 3, 19, 30, 11);
+  const t2 = new Date(2026, 8, 3, 19, 30, 12);
+  const f1 = Exporter.suggestFilename(col, t1);
+  assert.strictEqual(f1, 'apitap-api-shop-com-20260903-193011.json');
+  assert.notStrictEqual(f1, Exporter.suggestFilename(col, t2)); // timestamp makes each export unique
+  assert(Exporter.suggestFilename({ variable: [] }, t1).startsWith('apitap-session-')); // no host fallback
+});
 t('nothing checked -> empty collection, still valid JSON', () => {
   const c = new Correlator();
   c.addCall({ method: 'GET', url: 'https://api.x.com/users', ts: 1000 });

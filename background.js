@@ -257,7 +257,8 @@ function sessionSnapshot() {
 async function handleExport(message, sendResponse) {
   await ensureSessionLoaded();
   const c = correlator || initCorrelator();
-  const res = await downloadJson('apitap-collection.json', PostmanExporter.buildCollection(c));
+  const collection = PostmanExporter.buildCollection(c);
+  const res = await downloadJson(PostmanExporter.suggestFilename(collection), collection);
   sendResponse(res);
 }
 
