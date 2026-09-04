@@ -64,8 +64,8 @@
 
   function hasAssetContentType(apiCall) {
     const ctype = (apiCall.responseHeaders || [])
-      .filter((h) => h && h.name && h.name.toLowerCase() === 'content-type')
-      .map((h) => h.value.split(';')[0].trim().toLowerCase()).join(',');
+      .filter((h) => h && h.name && String(h.name).toLowerCase() === 'content-type' && h.value != null)
+      .map((h) => String(h.value).split(';')[0].trim().toLowerCase()).join(',');
     return !!ctype && ASSET_CONTENT_TYPES.some((t) => ctype.includes(t));
   }
 

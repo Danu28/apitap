@@ -154,7 +154,11 @@
       head.appendChild(badge);
       head.appendChild(label);
       head.appendChild(count);
-      head.addEventListener('click', () => block.classList.toggle('open'));
+      head.setAttribute('aria-expanded', 'false'); // groups start collapsed
+      head.addEventListener('click', () => {
+        const open = block.classList.toggle('open');
+        head.setAttribute('aria-expanded', String(open));
+      });
       block.appendChild(head);
 
       for (const call of group) block.appendChild(callRow(call));

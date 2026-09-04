@@ -47,6 +47,11 @@ t('tracking params are preserved (capture truth, no silent mutation)', () => {
   c.addCall({ method: 'GET', url: 'https://api.x.com/a?utm_source=x&real=1&gclid=y', ts: 1000 });
   assert.strictEqual(c.calls[0].url, 'https://api.x.com/a?utm_source=x&real=1&gclid=y');
 });
+t('malformed Content-Type header (no value) does not throw and keeps call as API', () => {
+  const call = { url: 'https://api.x.com/data', responseHeaders: [{ name: 'Content-Type' }] };
+  assert.doesNotThrow(() => NoiseFilter.filterReason(call));
+  assert.strictEqual(NoiseFilter.filterReason(call), null); // not classified as asset noise
+});
 
 /* ---- engine ---- */
 t('burst duplicates drop; noise calls are stored unchecked, others checked', () => {
@@ -212,6 +217,13 @@ t('binary base64 bodies keep raw base64, no mojibake', () => {
   const c = new Correlator();
   c.addCall(call);
   assert.strictEqual(c.calls[0].responseBody, b64);
+});
+t('malformed base64 body keeps the raw payload; the call is not lost', () => {
+  const rec = DebugCapture.requestStart({ request: { url: 'https://api.x.com/broken-base64', method: 'GET', headers: {} } });
+  const bad = '!!!not::base64!!!'; // atob throws on this input
+  const call = DebugCapture.finish(rec, bad, true);
+  assert.strictEqual(call.responseBody, bad); // raw kept, never a throw
+  assert.strictEqual(call.url, 'https://api.x.com/broken-base64');
 });
 
 t('a captured debugger call flows into engine grouping + export (params intact)', () => {

@@ -187,6 +187,12 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 
 async function handleStartRecording(message, sendResponse) {
   await ensureSessionLoaded();
+  // Already recording (e.g. a stale popup raced a stop): report the live
+  // recording instead of re-attaching the debugger on top of itself.
+  if (isRecording) {
+    sendResponse({ success: true, startedAt: recordingStartTime, tabId: recordingTabId });
+    return;
+  }
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   const tab = tabs && tabs[0];
   if (!tab || tab.id == null) {

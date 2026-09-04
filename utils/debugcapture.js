@@ -19,7 +19,14 @@
 
   function decodeBase64(b64) {
     if (!b64) return '';
-    const bin = atob(b64);
+    // Malformed base64 (bad chars/length) makes atob throw — catch it and keep
+    // the raw payload rather than let one bad body drop the whole call.
+    let bin;
+    try {
+      bin = atob(b64);
+    } catch (e) {
+      return b64;
+    }
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     try {
