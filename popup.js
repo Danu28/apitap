@@ -1,7 +1,9 @@
 /**
  * ApiTap — Popup controller
- * Reads the session from the background worker, renders endpoint groups with
- * export checkboxes, and triggers the Postman export of the checked calls.
+ * Reads the session from the background worker, renders a Domain → Endpoint →
+ * Request flow with tri-state export checkboxes at every level (a domain or
+ * endpoint toggle fans out to its descendant requests), and triggers the
+ * Postman export of the checked calls.
  * The popup closes when the user returns to the page; recording continues in
  * the service worker and this view re-syncs on every open via GET_SESSION.
  */
@@ -106,6 +108,136 @@
     return row;
   }
 
+  /* ---------- domain -> endpoint -> request grouping ---------- */
+
+  // Host of a group key (METHOD|host|path); unparseable keys group under themselves.
+  function hostOf(key) {
+    const p = String(key || '').split('|');
+    return p.length === 3 ? p[1] : key;
+  }
+
+  /** Ordered Domain -> Endpoint -> Request tree from the flat calls list. */
+  function buildDomainTree(calls) {
+    const domains = new Map(); // host -> { host, endpoints: Map<groupKey, calls> }
+    for (const call of calls) {
+      const key = call.groupKey || 'unparseable';
+      const host = hostOf(key);
+      if (!domains.has(host)) domains.set(host, { host: host, endpoints: new Map() });
+      const endpoints = domains.get(host).endpoints;
+      if (!endpoints.has(key)) endpoints.set(key, []);
+      endpoints.get(key).push(call);
+    }
+    return [...domains.values()];
+  }
+
+  /** Aggregate selection over a list of calls: full / partial / none. */
+  function selectionState(calls) {
+    const total = calls.length;
+    let checked = 0;
+    for (const call of calls) if (call.checked !== false) checked++;
+    return {
+      checked: checked,
+      all: total > 0 && checked === total,
+      some: checked > 0,
+      none: checked === 0
+    };
+  }
+
+  // Tri-state checkbox: click stops propagation (won't toggle section expand),
+  // and the parent's onChange drives its descendants via UPDATE_CHECKED.
+  function triCheckbox(state, onChange) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = state.all;
+    cb.indeterminate = state.some && !state.all;
+    cb.addEventListener('click', (e) => e.stopPropagation());
+    cb.addEventListener('change', () => onChange(cb.checked));
+    return cb;
+  }
+
+  // Section header (domain or endpoint) that starts collapsed and exposes
+  // aria-expanded while its click handler toggles the parent `.open`.
+  function collapsibleHead(kind) {
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = kind + '-head';
+    head.setAttribute('aria-expanded', 'false');
+    return head;
+  }
+
+  function endpointBlock(key, group) {
+    const state = selectionState(group);
+    const block = document.createElement('div');
+    block.className = 'step';
+
+    const head = collapsibleHead('step');
+    head.appendChild(triCheckbox(state, (checked) => send({ type: 'UPDATE_CHECKED', id: key, checked: checked })));
+    const first = group[0];
+    const badge = document.createElement('span');
+    badge.className = 'method ' + methodClass(first.method);
+    badge.textContent = first.method;
+    const label = document.createElement('span');
+    label.className = 'grow';
+    label.textContent = groupLabel(key);
+    const count = document.createElement('span');
+    count.className = 'pill';
+    count.textContent = group.length +
+      (state.some && !state.all ? ' · ' + state.checked + ' selected' : '');
+    head.appendChild(badge);
+    head.appendChild(label);
+    head.appendChild(count);
+    head.addEventListener('click', () => {
+      const open = block.classList.toggle('open');
+      head.setAttribute('aria-expanded', String(open));
+    });
+    block.appendChild(head);
+
+    for (const call of group) block.appendChild(callRow(call));
+    return block;
+  }
+
+  function domainBlock(domain) {
+    const allCalls = [];
+    for (const group of domain.endpoints.values()) for (const call of group) allCalls.push(call);
+    const state = selectionState(allCalls);
+    const block = document.createElement('div');
+    block.className = 'domain';
+
+    const head = collapsibleHead('domain');
+    head.appendChild(triCheckbox(state, (checked) => {
+      // A domain toggle fans out to one UPDATE_CHECKED per endpoint group; the
+      // engine's setChecked(id, checked) handles whole groups by key.
+      for (const key of domain.endpoints.keys()) send({ type: 'UPDATE_CHECKED', id: key, checked: checked });
+    }));
+    const name = document.createElement('span');
+    name.className = 'domain-name';
+    name.textContent = domain.host;
+    const count = document.createElement('span');
+    count.className = 'pill';
+    const nE = domain.endpoints.size;
+    const nC = allCalls.length;
+    count.textContent = nE + ' endpoint' + (nE === 1 ? '' : 's') + ' · ' + nC + ' request' + (nC === 1 ? '' : 's') +
+      (state.none ? '' : ' — ' + state.checked + ' selected');
+    const chevron = document.createElement('span');
+    chevron.className = 'chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.textContent = '\u25B8';
+    head.appendChild(name);
+    head.appendChild(count);
+    head.appendChild(chevron);
+    head.addEventListener('click', () => {
+      const open = block.classList.toggle('open');
+      head.setAttribute('aria-expanded', String(open));
+    });
+    block.appendChild(head);
+
+    const body = document.createElement('div');
+    body.className = 'domain-body';
+    for (const [key, group] of domain.endpoints) body.appendChild(endpointBlock(key, group));
+    block.appendChild(body);
+    return block;
+  }
+
   function renderFlow() {
     const host = els.flowContainer;
     host.innerHTML = '';
@@ -116,54 +248,7 @@
       return;
     }
     host.className = '';
-
-    const groups = new Map();
-    for (const call of calls) {
-      const key = call.groupKey || 'unparseable';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(call);
-    }
-
-    for (const [key, group] of groups) {
-      const allChecked = group.every((c) => c.checked !== false);
-      const someChecked = group.some((c) => c.checked !== false);
-      const block = document.createElement('div');
-      block.className = 'step';
-
-      const head = document.createElement('button');
-      head.type = 'button';
-      head.className = 'step-head';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = allChecked;
-      cb.indeterminate = someChecked && !allChecked;
-      cb.addEventListener('click', (e) => e.stopPropagation()); // don't toggle expand
-      cb.addEventListener('change', () => send({ type: 'UPDATE_CHECKED', id: key, checked: cb.checked }));
-      const first = group[0];
-      const badge = document.createElement('span');
-      badge.className = 'method ' + methodClass(first.method);
-      badge.textContent = first.method;
-      const label = document.createElement('span');
-      label.className = 'grow';
-      label.textContent = groupLabel(key);
-      const count = document.createElement('span');
-      count.className = 'pill';
-      count.textContent = group.length +
-        (someChecked && !allChecked ? ' · ' + group.filter((c) => c.checked !== false).length + ' exported' : '');
-      head.appendChild(cb);
-      head.appendChild(badge);
-      head.appendChild(label);
-      head.appendChild(count);
-      head.setAttribute('aria-expanded', 'false'); // groups start collapsed
-      head.addEventListener('click', () => {
-        const open = block.classList.toggle('open');
-        head.setAttribute('aria-expanded', String(open));
-      });
-      block.appendChild(head);
-
-      for (const call of group) block.appendChild(callRow(call));
-      host.appendChild(block);
-    }
+    for (const domain of buildDomainTree(calls)) host.appendChild(domainBlock(domain));
   }
 
   function renderFiltered() {

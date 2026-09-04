@@ -68,6 +68,22 @@
   .step-head input[type=checkbox], .call input[type=checkbox], .filtered-row input[type=checkbox] { accent-color: var(--blue); cursor: pointer; }
   .pill-noise { opacity: .65; color: var(--amber); border-color: var(--amber); }
 
+  /* Domain → Endpoint → Request hierarchy */
+  .domain { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px;
+    background: var(--panel); overflow: hidden; }
+  .domain-head { display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 9px 12px; background: var(--panel-2); border: none; text-align: left;
+    font: inherit; font-weight: 700; color: var(--text); cursor: pointer; }
+  .domain-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .domain-head .pill { white-space: nowrap; }
+  .chevron { color: var(--dim); font-size: 10px; transition: transform .15s ease; }
+  .domain.open .chevron { transform: rotate(90deg); }
+  .domain-body { display: none; padding: 8px 8px 4px; }
+  .domain.open .domain-body { display: block; }
+  .domain .step { margin-bottom: 8px; }
+  .domain .step:last-child { margin-bottom: 0; }
+  .domain-head input[type=checkbox] { accent-color: var(--blue); cursor: pointer; }
+
   .empty { color: var(--dim); text-align: center; padding: 30px 0; }
   .toast { position: fixed; bottom: 14px; right: 14px; background: var(--panel);
     border: 1px solid var(--green); color: var(--text); padding: 8px 14px; border-radius: 8px;
@@ -76,7 +92,7 @@
   /* .hidden toggles the Filtered panel via classList; keep it in sync with the button's aria-expanded. */
   .hidden { display: none; }
   :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .toast, .chevron { transition: none; } }
 </style>
 </head>
 <body>
