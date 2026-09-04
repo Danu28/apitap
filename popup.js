@@ -17,11 +17,19 @@
     statCalls: $('statCalls'), statGroups: $('statGroups'),
     statFiltered: $('statFiltered'), statDeduped: $('statDeduped'),
     btnFiltered: $('btnFiltered'), filteredList: $('filteredList'),
-    flowContainer: $('flowContainer'), toast: $('toast')
+    flowContainer: $('flowContainer'), toast: $('toast'),
+    filter: $('filter'), btnExpand: $('btnExpand')
   };
 
   let session = { isRecording: false, calls: [], stats: {} };
   let fetchTimer = null;
+  // Tree helpers live in utils/tree.js (ApiTapTree) so the tri-state grouping
+  // can be unit-tested in Node. `expanded` persists open sections across the
+  // 200ms live re-renders so the view never flickers back to collapsed.
+  const { buildDomainTree, selectionState, groupLabel } = ApiTapTree;
+  let expanded = new Set();   // 'd:'+host / 'e:'+groupKey — survives re-renders
+  let filterQuery = '';
+  let lastFlowSig = null;     // skip renderFlow when nothing relevant changed
 
   function escapeHtml(s) {
     return String(s == null ? '' : s)
@@ -88,59 +96,81 @@
   function methodClass(m) { return 'm-' + String(m || '').toLowerCase(); }
   function statusClass(s) { return s == null ? '' : (s >= 400 ? 'bad' : 'ok'); }
 
-  function groupLabel(key) {
-    const p = String(key || '').split('|');
-    return p.length === 3 ? (p[2] || p[1]) : key;
-  }
-
   function callRow(call) {
     const row = document.createElement('div');
     row.className = 'call';
     row.innerHTML =
-      '<input type="checkbox" data-check="' + call.id + '"' + (call.checked !== false ? ' checked' : '') + '>' +
+      '<input type="checkbox" data-check="' + escapeHtml(call.id) + '"' + (call.checked !== false ? ' checked' : '') + '>' +
       '<span class="method ' + methodClass(call.method) + '">' + escapeHtml(call.method) + '</span>' +
       '<span class="status ' + statusClass(call.status) + '">' + (call.status != null ? call.status : '—') + '</span>' +
       (call.noiseReason ? '<span class="pill pill-noise">' + escapeHtml(call.noiseReason) + '</span>' : '') +
+      (call.errorText ? '<span class="pill pill-fail" title="' + escapeHtml(call.errorText) + '">failed</span>' : '') +
       '<span class="call-url" title="' + escapeHtml(call.url) + '">' + escapeHtml(call.url) + '</span>';
     row.querySelector('[data-check]').addEventListener('change', (e) => {
       send({ type: 'UPDATE_CHECKED', id: call.id, checked: e.target.checked });
     });
+    const curlBtn = document.createElement('button');
+    curlBtn.type = 'button';
+    curlBtn.className = 'row-action';
+    curlBtn.title = 'Copy as cURL';
+    curlBtn.textContent = 'curl';
+    curlBtn.addEventListener('click', async () => {
+      const res = await send({ type: 'GET_CALL', id: call.id });
+      if (!res || !res.call) { toast('No request data to copy'); return; }
+      toast((await copyToClipboard(buildCurl(res.call))) ? 'cURL copied' : 'Could not copy');
+    });
+    row.appendChild(curlBtn);
     return row;
   }
 
   /* ---------- domain -> endpoint -> request grouping ---------- */
 
-  // Host of a group key (METHOD|host|path); unparseable keys group under themselves.
-  function hostOf(key) {
-    const p = String(key || '').split('|');
-    return p.length === 3 ? p[1] : key;
-  }
+  // buildDomainTree / selectionState / groupLabel come from utils/tree.js.
 
-  /** Ordered Domain -> Endpoint -> Request tree from the flat calls list. */
-  function buildDomainTree(calls) {
-    const domains = new Map(); // host -> { host, endpoints: Map<groupKey, calls> }
-    for (const call of calls) {
-      const key = call.groupKey || 'unparseable';
-      const host = hostOf(key);
-      if (!domains.has(host)) domains.set(host, { host: host, endpoints: new Map() });
-      const endpoints = domains.get(host).endpoints;
-      if (!endpoints.has(key)) endpoints.set(key, []);
-      endpoints.get(key).push(call);
-    }
-    return [...domains.values()];
-  }
-
-  /** Aggregate selection over a list of calls: full / partial / none. */
-  function selectionState(calls) {
-    const total = calls.length;
+  function callsSig(calls) {
     let checked = 0;
-    for (const call of calls) if (call.checked !== false) checked++;
-    return {
-      checked: checked,
-      all: total > 0 && checked === total,
-      some: checked > 0,
-      none: checked === 0
-    };
+    for (const c of calls) if (c.checked !== false) checked++;
+    return calls.length + ':' + checked;
+  }
+
+  function filteredCalls(calls) {
+    const q = filterQuery.trim().toLowerCase();
+    if (!q) return calls;
+    return calls.filter((c) =>
+      (c.url && c.url.toLowerCase().indexOf(q) !== -1) ||
+      (c.method && c.method.toLowerCase().indexOf(q) !== -1));
+  }
+
+  // cURL renderer for the per-request copy action.
+  function buildCurl(call) {
+    const q = (s) => "'" + String(s == null ? '' : s).replace(/'/g, "'\\''") + "'";
+    const parts = ['curl'];
+    const method = call.method || 'GET';
+    if (method !== 'GET') parts.push('-X ' + method);
+    parts.push(q(call.url));
+    for (const h of call.requestHeaders || []) {
+      if (!h || !h.name) continue;
+      parts.push('-H ' + q(String(h.name) + ': ' + (h.value != null ? String(h.value) : '')));
+    }
+    if (call.requestBody) parts.push('--data-raw ' + q(call.requestBody));
+    return parts.join(' ');
+  }
+
+  async function copyToClipboard(text) {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch (e) {
+      // Fallback for contexts without async clipboard write.
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch (e2) { return false; }
+    }
   }
 
   // Tri-state checkbox: click stops propagation (won't toggle section expand),
@@ -167,10 +197,12 @@
 
   function endpointBlock(key, group) {
     const state = selectionState(group);
+    const ek = 'e:' + key;
     const block = document.createElement('div');
-    block.className = 'step';
+    block.className = 'step' + (expanded.has(ek) ? ' open' : '');
 
     const head = collapsibleHead('step');
+    head.setAttribute('aria-expanded', String(expanded.has(ek)));
     head.appendChild(triCheckbox(state, (checked) => send({ type: 'UPDATE_CHECKED', id: key, checked: checked })));
     const first = group[0];
     const badge = document.createElement('span');
@@ -188,6 +220,7 @@
     head.appendChild(count);
     head.addEventListener('click', () => {
       const open = block.classList.toggle('open');
+      open ? expanded.add(ek) : expanded.delete(ek);
       head.setAttribute('aria-expanded', String(open));
     });
     block.appendChild(head);
@@ -200,10 +233,12 @@
     const allCalls = [];
     for (const group of domain.endpoints.values()) for (const call of group) allCalls.push(call);
     const state = selectionState(allCalls);
+    const dk = 'd:' + domain.host;
     const block = document.createElement('div');
-    block.className = 'domain';
+    block.className = 'domain' + (expanded.has(dk) ? ' open' : '');
 
     const head = collapsibleHead('domain');
+    head.setAttribute('aria-expanded', String(expanded.has(dk)));
     head.appendChild(triCheckbox(state, (checked) => {
       // A domain toggle fans out to one UPDATE_CHECKED per endpoint group; the
       // engine's setChecked(id, checked) handles whole groups by key.
@@ -227,6 +262,7 @@
     head.appendChild(chevron);
     head.addEventListener('click', () => {
       const open = block.classList.toggle('open');
+      open ? expanded.add(dk) : expanded.delete(dk);
       head.setAttribute('aria-expanded', String(open));
     });
     block.appendChild(head);
@@ -240,11 +276,17 @@
 
   function renderFlow() {
     const host = els.flowContainer;
+    const allCalls = session.calls || [];
     host.innerHTML = '';
-    const calls = session.calls || [];
-    if (!calls.length) {
+    if (!allCalls.length) {
       host.className = 'empty';
       host.textContent = 'No recording yet. Start recording, then use the page.';
+      return;
+    }
+    const calls = filteredCalls(allCalls);
+    if (!calls.length) {
+      host.className = 'empty';
+      host.textContent = 'No calls match \u0022' + filterQuery + '\u0022';
       return;
     }
     host.className = '';
@@ -287,8 +329,10 @@
   function render() {
     updateStatus();
     updateStats();
-    renderFlow();
-    renderFiltered();
+    // Avoid tearing down/rebuilding the whole flow on live updates that didn't
+    // actually add or re-check anything — the signatur covers count + checked.
+    const sig = callsSig(session.calls || []);
+    if (sig !== lastFlowSig) { lastFlowSig = sig; renderFlow(); renderFiltered(); }
   }
 
   /* ---------- actions ---------- */
@@ -317,9 +361,34 @@
     const nowHidden = wrap.classList.toggle('hidden');
     els.btnFiltered.setAttribute('aria-expanded', String(!nowHidden));
   });
+  els.btnExpand.addEventListener('click', () => {
+    if (els.btnExpand.classList.contains('active')) {
+      expanded = new Set();
+      els.btnExpand.classList.remove('active');
+      els.btnExpand.textContent = 'Expand all';
+    } else {
+      expanded = new Set();
+      for (const domain of buildDomainTree(session.calls || [])) {
+        expanded.add('d:' + domain.host);
+        for (const key of domain.endpoints.keys()) expanded.add('e:' + key);
+      }
+      els.btnExpand.classList.add('active');
+      els.btnExpand.textContent = 'Collapse all';
+    }
+    renderFlow();
+  });
+  els.filter.addEventListener('input', () => {
+    filterQuery = els.filter.value;
+    renderFlow();
+  });
   els.btnExport.addEventListener('click', async () => {
     const res = await send({ type: 'EXPORT_POSTMAN' });
-    toast(res && res.success ? 'Collection downloaded' : 'Export failed');
+    if (res && res.success) {
+      const n = (session.calls || []).filter((c) => c.checked !== false).length;
+      toast('Downloaded ' + n + ' request' + (n === 1 ? '' : 's'));
+    } else {
+      toast('Export failed' + (res && res.error ? ': ' + res.error : ''));
+    }
   });
 
   /* ---------- live updates ---------- */

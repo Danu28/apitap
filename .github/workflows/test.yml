@@ -11,5 +11,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --check apitap.test.js && node --check background.js && node --check popup.js && node --check utils/correlation.js && node --check utils/debugcapture.js && node --check utils/filter.js && node --check utils/postman.js
+      - run: node --check apitap.test.js && node --check background.js && node --check popup.js && node --check utils/correlation.js && node --check utils/debugcapture.js && node --check utils/filter.js && node --check utils/postman.js && node --check utils/tree.js
       - run: node apitap.test.js

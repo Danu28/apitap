@@ -13,7 +13,8 @@
     "debugger",
     "downloads",
     "storage",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "clipboardWrite"
   ],
   "background": {
     "service_worker": "background.js"

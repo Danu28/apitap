@@ -35,10 +35,10 @@
     'doubleclick.net', 'hotjar.com', 'mixpanel.com', 'segment.io', 'segment.com',
     'amplitude.com', 'sentry.io', 'newrelic.com', 'bugsnag.com', 'fullstory.com',
     'clicktale.net', 'mouseflow.com', 'posthog.com', 'logrocket.com', 'matomo.cloud',
-    'crashlytics', 'clarity.ms', 'inspectlet.com', 'smartlook.com',
+    'crashlytics.com', 'clarity.ms', 'inspectlet.com', 'smartlook.com',
     'datadoghq.com', 'nr-data.net', 'browser-intake-datadoghq.com',
     'quantcast.com', 'chartbeat.com', 'beacon.krxd.net', 'sc-static.net',
-    'googlesyndication'
+    'googlesyndication.com'
   ];
 
   function hostFromUrl(url) {

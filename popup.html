@@ -84,6 +84,20 @@
   .domain .step:last-child { margin-bottom: 0; }
   .domain-head input[type=checkbox] { accent-color: var(--blue); cursor: pointer; }
 
+  /* Flow tools: filter + expand/collapse all */
+  .flow-tools { display: flex; gap: 8px; align-items: center; padding: 10px 14px 0; }
+  .flow-tools input[type=search] { flex: 1; background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+  .flow-tools input[type=search]::placeholder { color: var(--dim); }
+  .flow-tools input[type=search]:focus { border-color: var(--blue); outline: none; }
+  #btnExpand { background: var(--panel-2); white-space: nowrap; }
+  #btnExpand.active { border-color: var(--blue); color: #bfdbfe; }
+
+  .call .row-action { background: none; border: 1px solid var(--line); border-radius: 6px;
+    color: var(--dim); font-size: 10.5px; padding: 2px 8px; cursor: pointer; flex: none; }
+  .call .row-action:hover:not(:disabled) { color: var(--text); border-color: var(--blue); }
+  .pill-fail { color: var(--rose); border-color: var(--rose); background: #2a1820; }
+
   .empty { color: var(--dim); text-align: center; padding: 30px 0; }
   .toast { position: fixed; bottom: 14px; right: 14px; background: var(--panel);
     border: 1px solid var(--green); color: var(--text); padding: 8px 14px; border-radius: 8px;
@@ -116,6 +130,11 @@
 
   <div class="hint">Record attaches to this tab (Chrome shows a "debugging" bar while it runs). The popup closes while you use the page — recording continues; reopen ApiTap to review, check, and export.</div>
 
+  <div class="flow-tools">
+    <input id="filter" type="search" placeholder="Filter by host, path or method…" aria-label="Filter calls">
+    <button id="btnExpand" class="stat-btn" type="button">Expand all</button>
+  </div>
+
   <div class="pane"><div id="flowContainer" class="empty">No recording yet. Start recording, then use the page.</div></div>
 
   <div id="filteredWrap" class="pane hidden">
@@ -124,6 +143,7 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="utils/tree.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

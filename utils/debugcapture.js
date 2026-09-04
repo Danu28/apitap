@@ -80,6 +80,7 @@
       responseHeaders: record.responseHeaders || [],
       requestBody: record.postData || null,
       responseBody: responseBody,
+      errorText: record.errorText || null, // from Network.loadingFailed, when present
       ts: record.wallTime ? Math.round(record.wallTime * 1000) : Date.now()
     };
   }

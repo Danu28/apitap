@@ -10,6 +10,7 @@
 importScripts('utils/filter.js', 'utils/correlation.js', 'utils/postman.js', 'utils/debugcapture.js');
 
 const SESSION_STORAGE_KEY = 'apitapSession';
+const PERSIST_DEBOUNCE_MS = 500; // coalesce per-capture writes; flushed on Stop/Clear
 
 let isRecording = false;
 let recordingStartTime = null;
@@ -17,6 +18,7 @@ let recordingTabId = null;
 let pendingRequests = new Map(); // requestId -> in-flight capture record (never persisted)
 let correlator = null;
 let restoreStatePromise = restorePersistedSession();
+let persistTimer = null; // trailing-edge debounce for ingest-time persistence
 
 function initCorrelator() {
   if (!correlator) correlator = new ApiTapCorrelator();
@@ -48,6 +50,18 @@ async function persistSession() {
     console.debug('[ApiTap] persist failed:', e.message);
     return false;
   }
+}
+
+// Debounce session writes during high-frequency capture: multiple in-flight
+// requests coalesce into one trailing-edge write instead of re-serializing the
+// whole session per call. Stop/Clear flush immediately (see cancelPersist).
+function schedulePersist() {
+  if (persistTimer != null) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => { persistTimer = null; persistSession(); }, PERSIST_DEBOUNCE_MS);
+}
+
+function cancelPersist() {
+  if (persistTimer != null) { clearTimeout(persistTimer); persistTimer = null; }
 }
 
 async function restorePersistedSession() {
@@ -134,7 +148,7 @@ function ingestApiCall(call) {
     console.debug('[ApiTap] ingest failed:', e.message);
     return;
   }
-  persistSession();
+  schedulePersist();
   broadcastUpdate();
 }
 
@@ -178,6 +192,17 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
           pendingRequests.delete(params.requestId);
           ingestApiCall(DebugCapture.finish(rec, null, false));
         });
+      break;
+    }
+    case 'Network.loadingFailed': {
+      // No body and no loadingFinished will ever arrive for a failed/canceled
+      // request — record it now (null body) so it isn't lost and doesn't leak
+      // out of pendingRequests, tagging the failure reason when CDP gives one.
+      const rec = pendingRequests.get(params.requestId);
+      if (!rec) break;
+      pendingRequests.delete(params.requestId);
+      if (params.errorText) rec.errorText = params.errorText;
+      ingestApiCall(DebugCapture.finish(rec, null, false));
       break;
     }
   }
@@ -226,6 +251,7 @@ async function handleStopRecording(message, sendResponse) {
   try {
     if (tabId != null) await chrome.debugger.detach({ tabId: tabId });
   } catch (e) { /* already detached */ }
+  cancelPersist();
   await persistSession();
   sendResponse({ success: true, stoppedAt: Date.now() });
   broadcastUpdate();
@@ -238,6 +264,7 @@ async function handleClearSession(message, sendResponse) {
   try {
     if (tabId != null) await chrome.debugger.detach({ tabId: tabId });
   } catch (e) { /* already detached */ }
+  cancelPersist();
   correlator = null;
   recordingStartTime = null;
   await persistSession();
@@ -271,6 +298,7 @@ function sessionSnapshot() {
       status: call.status,
       checked: call.checked,
       noiseReason: call.noiseReason,
+      errorText: call.errorText || null,
       groupKey: c.groupKey(call)
     })),
     stats: c.getStats()
@@ -296,6 +324,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       ensureSessionLoaded().then(() => sendResponse({ success: true, session: sessionSnapshot() }));
       return true;
     case 'UPDATE_CHECKED': handleUpdateChecked(message, sendResponse); return true;
+    case 'GET_CALL':
+      ensureSessionLoaded().then(() => {
+        const c = correlator || initCorrelator();
+        const call = c.calls.find((x) => x.id === message.id);
+        sendResponse(call ? { success: true, call: call } : { success: false, error: 'no such call' });
+      });
+      return true;
     case 'EXPORT_POSTMAN': handleExport(message, sendResponse); return true;
     default:
       sendResponse({ success: false, error: 'Unknown message type: ' + message.type });

@@ -5,6 +5,7 @@ const NoiseFilter = require('./utils/filter.js');
 const Correlator = require('./utils/correlation.js');
 const Exporter = require('./utils/postman.js');
 const DebugCapture = require('./utils/debugcapture.js');
+const Tree = require('./utils/tree.js');
 
 const t = (name, fn) => {
   try { fn(); console.log('PASS', name); }
@@ -25,6 +26,12 @@ t('host matching is exact/subdomain only — junk entries purged', () => {
   assert(!NoiseFilter.isNoise({ url: 'https://my-gtag-host.com/x' }));
   assert(!NoiseFilter.isNoise({ url: 'https://shop.1stdibs.com/api' }));
   assert(NoiseFilter.isNoise({ url: 'https://sub.sentry.io/ingest' })); // real subdomain still drops
+});
+t('crashlytics.com and googlesyndication.com telemetry are flagged', () => {
+  assert(NoiseFilter.isNoise({ url: 'https://crashlytics.com/report' }));
+  assert(NoiseFilter.isNoise({ url: 'https://firebase-settings.crashlytics.com/x' }));
+  assert(NoiseFilter.isNoise({ url: 'https://pagead2.googlesyndication.com/pagead/ads' }));
+  assert(NoiseFilter.isNoise({ url: 'https://www.googletagmanager.com/gtm.js' }));
 });
 t('filterReason classifies drops', () => {
   const mk = (url, ct) => ({ url: url, responseHeaders: ct ? [{ name: 'Content-Type', value: ct }] : [] });
@@ -91,6 +98,33 @@ t('groups derived by method+host+path; query is collapsed', () => {
   assert.strictEqual(g.get('GET|api.x.com|/users').calls.length, 2);
   assert.strictEqual(c.getStats().groups, 3);
 });
+t('tree build groups domains->endpoints; tri-state aggregates', () => {
+  const calls = [
+    { id: 'c1', method: 'GET', url: 'https://api.x.com/users', status: 200, checked: true, groupKey: 'GET|api.x.com|/users' },
+    { id: 'c2', method: 'GET', url: 'https://api.x.com/users?p=2', status: 200, checked: false, groupKey: 'GET|api.x.com|/users' },
+    { id: 'c3', method: 'POST', url: 'https://api.x.com/users', status: 201, checked: true, groupKey: 'POST|api.x.com|/users' },
+    { id: 'c4', method: 'GET', url: 'https://cdn.x.com/x.png', status: 200, checked: false, groupKey: 'GET|cdn.x.com|/x.png' },
+    { id: 'c5', method: 'GET', url: 'not a url', status: 0, checked: true, groupKey: 'unparseable' }
+  ];
+  const domains = Tree.buildDomainTree(calls);
+  assert.strictEqual(domains.length, 3); // api.x.com, cdn.x.com, unparseable
+  const api = domains.find((d) => d.host === 'api.x.com');
+  assert.strictEqual(api.endpoints.size, 2);
+  const partial = Tree.selectionState(api.endpoints.get('GET|api.x.com|/users'));
+  assert.strictEqual(partial.all, false); assert.strictEqual(partial.some, true); assert.strictEqual(partial.checked, 1);
+  const full = Tree.selectionState(api.endpoints.get('POST|api.x.com|/users'));
+  assert.strictEqual(full.all, true);
+  const none = Tree.selectionState(api.endpoints.get('GET|api.x.com|/orders') || []);
+  assert.strictEqual(none.none, true);
+  assert.strictEqual(Tree.hostOf('unparseable'), 'unparseable');
+  assert.strictEqual(Tree.groupLabel('GET|api.x.com|/orders'), '/orders');
+});
+t('buildDomainTree accepts an injected host extractor', () => {
+  const domains = Tree.buildDomainTree([{ groupKey: 'x' }], () => 'custom');
+  assert.strictEqual(domains.length, 1);
+  assert.strictEqual(domains[0].host, 'custom');
+  assert.strictEqual(domains[0].endpoints.size, 1);
+});
 t('malformed URL lands in the unparseable group, never throws', () => {
   const c = new Correlator();
   c.addCall({ method: 'GET', url: 'not a url', status: 0, ts: 1 });
@@ -154,10 +188,8 @@ t('collection exports only checked calls, one folder per group, valid v2.1', () 
 });
 t('export is Postman-native: URL breakdown, params, auth, valid variable type', () => {
   const c = new Correlator();
-  c.addCall({ method: 'GET', url: 'https://api.x.com/users?page=2&filter=active#top', status: 200, ts: 1000,
-    requestHeaders: [{ name: 'Authorization', value: 'Bearer tkn12345' }] });
-  c.addCall({ method: 'POST', url: 'https://api.x.com/users', status: 201, ts: 3500,
-    requestBody: '{"name":"bob"}' });
+  c.addCall({ method: 'GET', url: 'https://api.x.com/users?page=2&filter=active#top', status: 200, ts: 1000, requestHeaders: [{ name: 'Authorization', value: 'Bearer tkn12345' }] });
+  c.addCall({ method: 'POST', url: 'https://api.x.com/users', status: 201, ts: 3500, requestBody: '{"name":"bob"}' });
   const col = Exporter.buildCollection(c);
   assert.strictEqual(col.variable[0].type, 'string'); // v2.1 enum, not 'default'
   const get = col.item.find((f) => f.name === 'GET /users').item[0];
@@ -175,6 +207,19 @@ t('export is Postman-native: URL breakdown, params, auth, valid variable type', 
   const post = col.item.find((f) => f.name === 'POST /users').item[0];
   assert.strictEqual(post.request.body.mode, 'raw');
   assert.strictEqual(post.request.url.host[0], 'api');
+});
+t('origin substitution is prefix-only; query values keep the base-origin literal', () => {
+  const c = new Correlator();
+  c.addCall({ method: 'GET', url: 'https://api.x.com/login?redirect_uri=https://api.x.com/cb', status: 200, ts: 1000 });
+  c.addCall({ method: 'GET', url: 'https://api.x.com/users', status: 200, ts: 2000 });
+  const col = Exporter.buildCollection(c);
+  const login = col.item.find((f) => f.name === 'GET /login').item[0];
+  assert.strictEqual(login.request.url.raw, '{{baseUrl}}/login?redirect_uri=https://api.x.com/cb');
+  // A foreign-origin URL is never touched by the most-common baseUrl.
+  c.addCall({ method: 'GET', url: 'https://auth.x.com/go?next=https://api.x.com/users', status: 200, ts: 3000 });
+  const col2 = Exporter.buildCollection(c);
+  const auth = col2.item.find((f) => f.name === 'GET /go').item[0];
+  assert.strictEqual(auth.request.url.raw, 'https://auth.x.com/go?next=https://api.x.com/users');
 });
 
 t('debugger events map to an apiCall (incl. base64 body decode)', () => {

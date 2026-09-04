@@ -101,7 +101,14 @@
     let substituted = false;
     try {
       const origin = new URL(callUrl).origin;
-      if (origin) { raw = raw.split(origin).join('{{baseUrl}}'); substituted = true; }
+      // Substitute only the call's own origin when it matches the collection's
+      // baseUrl — and only as a prefix (never inside query params). A secondary
+      // origin (e.g. an auth host) must keep its absolute URL, not be rewritten
+      // to baseUrl's host.
+      if (origin && baseUrl && origin === baseUrl && raw.startsWith(origin)) {
+        raw = '{{baseUrl}}' + raw.slice(origin.length);
+        substituted = true;
+      }
     } catch (e) {}
     const urlObj = { raw: raw };
     try {
