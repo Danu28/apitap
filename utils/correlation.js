@@ -22,7 +22,7 @@
     this.calls = [];       // all stored calls; noise-qualified ones are unchecked
     this.filtered = 0;     // stored-noise count (visible in stats)
     this.deduped = 0;      // burst-duplicate count
-    this.dedupeKeyToTs = {}; // fingerprint -> last ts (not persisted)
+    this.dedupeKeyToTs = new Map(); // fingerprint -> last ts (not persisted)
   }
 
   function truncateBody(str) {
@@ -45,11 +45,12 @@
     // Burst-dedupe: same method|host|path|status within the window is a repeat.
     const fp = this.fingerprint(rawCall);
     const now = rawCall.ts || Date.now();
-    if (this.dedupeKeyToTs[fp] && (now - this.dedupeKeyToTs[fp]) < DEDUPE_WINDOW_MS) {
+    const lastTs = this.dedupeKeyToTs.get(fp);
+    if (lastTs != null && now - lastTs < DEDUPE_WINDOW_MS) {
       this.deduped++;
       return null;
     }
-    this.dedupeKeyToTs[fp] = now;
+    this.dedupeKeyToTs.set(fp, now);
 
     if (noiseReason) this.filtered++;
 

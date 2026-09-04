@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ApiTap</title>
 <style>
   :root {
@@ -71,12 +73,16 @@
     border: 1px solid var(--green); color: var(--text); padding: 8px 14px; border-radius: 8px;
     opacity: 0; transition: opacity .2s; }
   .toast.show { opacity: 1; }
+  /* .hidden toggles the Filtered panel via classList; keep it in sync with the button's aria-expanded. */
+  .hidden { display: none; }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
 </style>
 </head>
 <body>
   <header>
     <h1>ApiTap</h1>
-    <span id="status" data-state="idle">Idle</span>
+    <span id="status" data-state="idle" aria-live="polite">Idle</span>
     <div class="controls">
       <button id="btnStart" class="primary">Record</button>
       <button id="btnStop" disabled>Stop</button>
@@ -88,7 +94,7 @@
   <div class="stats">
     <span>Requests <b id="statCalls">0</b></span>
     <span>Groups <b id="statGroups">0</b></span>
-    <button id="btnFiltered" class="stat-btn" disabled>Filtered <b id="statFiltered">0</b></button>
+    <button id="btnFiltered" class="stat-btn" aria-expanded="false" aria-controls="filteredWrap" disabled>Filtered <b id="statFiltered">0</b></button>
     <span>Deduped <b id="statDeduped">0</b></span>
   </div>
 
@@ -101,7 +107,7 @@
     <div id="filteredList"></div>
   </div>
 
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="popup.js"></script>
 </body>
 </html>

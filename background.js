@@ -56,8 +56,8 @@ async function restorePersistedSession() {
     const saved = data[SESSION_STORAGE_KEY];
     if (saved) {
       isRecording = !!saved.isRecording;
-      recordingStartTime = saved.recordingStartTime || null;
-      recordingTabId = saved.recordingTabId || null;
+      recordingStartTime = saved.recordingStartTime ?? null;
+      recordingTabId = saved.recordingTabId ?? null; // ?? not ||: tabId 0 is valid
       if (saved.engine) {
         const c = initCorrelator();
         c.mergeState(saved.engine);
@@ -70,12 +70,13 @@ async function restorePersistedSession() {
         try {
           await attachDebugger(recordingTabId);
         } catch (e) {
-          isRecording = false;
-          recordingTabId = null;
+          stopCapture();
+          recordingStartTime = null;
           await persistSession();
         }
       } else if (isRecording) {
-        isRecording = false;
+        stopCapture();
+        recordingStartTime = null;
         await persistSession();
       }
     }
@@ -117,6 +118,13 @@ function clearCaptureState() {
   pendingRequests = new Map();
 }
 
+// Single teardown for Stop, Clear, detach and restore-failure paths — flips
+// recording off in one place so the state can't drift between handlers.
+function stopCapture() {
+  isRecording = false;
+  clearCaptureState();
+}
+
 // Captured CDP events flowing into the engine, in sw context (no messaging hop).
 function ingestApiCall(call) {
   const c = correlator || initCorrelator();
@@ -134,8 +142,7 @@ chrome.debugger.onDetach.addListener((source) => {
   // The tab was detached under us (DevTools opened, another debugger took over,
   // or the tab closed): stop recording gracefully rather than leave a dead state.
   if (source.tabId === recordingTabId) {
-    isRecording = false;
-    clearCaptureState();
+    stopCapture();
     persistSession();
     broadcastUpdate();
   }
@@ -195,9 +202,8 @@ async function handleStartRecording(message, sendResponse) {
   try {
     await attachDebugger(tab.id);
   } catch (e) {
-    isRecording = false;
-    recordingTabId = null;
-    pendingRequests = new Map();
+    stopCapture();
+    recordingStartTime = null;
     sendResponse({ success: false, error: 'Could not record this tab: ' + e.message });
     return;
   }
@@ -209,11 +215,11 @@ async function handleStartRecording(message, sendResponse) {
 
 async function handleStopRecording(message, sendResponse) {
   await ensureSessionLoaded();
-  isRecording = false;
+  const tabId = recordingTabId; // detach still needs the id after stopCapture() nulls it
+  stopCapture();
   try {
-    if (recordingTabId != null) await chrome.debugger.detach({ tabId: recordingTabId });
+    if (tabId != null) await chrome.debugger.detach({ tabId: tabId });
   } catch (e) { /* already detached */ }
-  clearCaptureState();
   await persistSession();
   sendResponse({ success: true, stoppedAt: Date.now() });
   broadcastUpdate();
@@ -221,11 +227,11 @@ async function handleStopRecording(message, sendResponse) {
 
 async function handleClearSession(message, sendResponse) {
   await ensureSessionLoaded();
-  isRecording = false;
+  const tabId = recordingTabId;
+  stopCapture();
   try {
-    if (recordingTabId != null) await chrome.debugger.detach({ tabId: recordingTabId });
+    if (tabId != null) await chrome.debugger.detach({ tabId: tabId });
   } catch (e) { /* already detached */ }
-  clearCaptureState();
   correlator = null;
   recordingStartTime = null;
   await persistSession();
@@ -243,13 +249,24 @@ async function handleUpdateChecked(message, sendResponse) {
   broadcastUpdate();
 }
 
+// Only the fields the popup renders are sent; request/response bodies and the
+// full header lists stay in the worker (they'd inflate every SESSION_UPDATED
+// re-fetch for no benefit to the view).
 function sessionSnapshot() {
   const c = correlator || initCorrelator();
   return {
     isRecording: isRecording,
     recordingStartTime: recordingStartTime,
     recordingTabId: recordingTabId,
-    calls: c.calls.map((call) => Object.assign({}, call, { groupKey: c.groupKey(call) })),
+    calls: c.calls.map((call) => ({
+      id: call.id,
+      method: call.method,
+      url: call.url,
+      status: call.status,
+      checked: call.checked,
+      noiseReason: call.noiseReason,
+      groupKey: c.groupKey(call)
+    })),
     stats: c.getStats()
   };
 }

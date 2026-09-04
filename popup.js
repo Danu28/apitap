@@ -165,6 +165,13 @@
   function renderFiltered() {
     const dropped = (session.calls || []).filter((c) => c.noiseReason).slice(-50).reverse();
     els.btnFiltered.disabled = !dropped.length;
+    // No dropped calls left to show (e.g. session cleared): collapse the panel
+    // so a stale empty pane doesn't linger next to a disabled button.
+    if (!dropped.length) {
+      const wrap = $('filteredWrap');
+      wrap.classList.add('hidden');
+      els.btnFiltered.setAttribute('aria-expanded', 'false');
+    }
     const host = els.filteredList;
     host.innerHTML = '';
     for (const d of dropped) {
@@ -217,7 +224,9 @@
   });
 
   els.btnFiltered.addEventListener('click', () => {
-    $('filteredWrap').classList.toggle('hidden');
+    const wrap = $('filteredWrap');
+    const nowHidden = wrap.classList.toggle('hidden');
+    els.btnFiltered.setAttribute('aria-expanded', String(!nowHidden));
   });
   els.btnExport.addEventListener('click', async () => {
     const res = await send({ type: 'EXPORT_POSTMAN' });
