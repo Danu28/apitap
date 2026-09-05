@@ -61,7 +61,9 @@
       status: rawCall.status != null ? rawCall.status : null,
       requestHeaders: rawCall.requestHeaders || [],
       responseHeaders: rawCall.responseHeaders || [],
-      requestBody: truncateBody(rawCall.requestBody),
+      // Request bodies are NOT truncated: a cut body would silently replay
+      // wrong data. README contract: only response bodies are capped.
+      requestBody: rawCall.requestBody || null,
       // Noise bodies are skipped: base64 images/media would balloon the
       // session and are never useful for export.
       responseBody: noiseReason ? null : truncateBody(rawCall.responseBody),

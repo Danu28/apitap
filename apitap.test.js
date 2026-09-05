@@ -208,6 +208,20 @@ t('export is Postman-native: URL breakdown, params, auth, valid variable type', 
   assert.strictEqual(post.request.body.mode, 'raw');
   assert.strictEqual(post.request.url.host[0], 'api');
 });
+t('request bodies are never truncated (replay data intact); response bodies still capped', () => {
+  const c = new Correlator();
+  const bigReq = '{"data":"' + 'x'.repeat(250000) + '"}';
+  c.addCall({ method: 'POST', url: 'https://api.x.com/upload', ts: 1000,
+    requestBody: bigReq, responseBody: 'y'.repeat(250000) });
+  const stored = c.calls[0];
+  assert.strictEqual(stored.requestBody, bigReq);                       // request body untouched
+  assert(stored.responseBody.includes('[ApiTap] truncated'));           // response body still capped
+  const col = Exporter.buildCollection(c);
+  const req = col.item[0].item[0].request;
+  assert.strictEqual(req.body.raw, bigReq);                             // full replay body, no marker
+  assert.strictEqual(req.body.options.raw.language, 'json');            // intact JSON still detected
+});
+
 t('origin substitution is prefix-only; query values keep the base-origin literal', () => {
   const c = new Correlator();
   c.addCall({ method: 'GET', url: 'https://api.x.com/login?redirect_uri=https://api.x.com/cb', status: 200, ts: 1000 });

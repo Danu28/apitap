@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlowTrace QA - Test Application</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🧪 FlowTrace QA Test App</h1>
+      <p class="subtitle">Test application to validate the Chrome Extension</p>
+    </header>
+
+    <main>
+      <!-- Section 1: Simple Button Click -->
+      <section class="card">
+        <h2>1. Button Click Test</h2>
+        <p>Click the button to trigger an API call</p>
+        <button id="btnFetchUser" class="btn btn-primary">Fetch User Data</button>
+        <div id="userResult" class="result"></div>
+      </section>
+
+      <!-- Section 2: Form Submission -->
+      <section class="card">
+        <h2>2. Form Submission Test</h2>
+        <p>Fill the form and submit to trigger POST request</p>
+        <form id="loginForm">
+          <div class="form-group">
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username" placeholder="Enter username" required>
+          </div>
+          <div class="form-group">
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" placeholder="Enter password" required>
+          </div>
+          <button type="submit" class="btn btn-success">Login</button>
+        </form>
+        <div id="loginResult" class="result"></div>
+      </section>
+
+      <!-- Section 3: Search with API Call -->
+      <section class="card">
+        <h2>3. Search Test</h2>
+        <p>Type to search (triggers API on input)</p>
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="Search for posts...">
+          <button id="btnSearch" class="btn btn-secondary">Search</button>
+        </div>
+        <div id="searchResults" class="result"></div>
+      </section>
+
+      <!-- Section 4: Dynamic Content Load -->
+      <section class="card">
+        <h2>4. Dynamic Content Test</h2>
+        <p>Load posts and click on them</p>
+        <button id="btnLoadPosts" class="btn btn-primary">Load Posts</button>
+        <div id="postsContainer" class="posts-grid"></div>
+      </section>
+
+      <!-- Section 5: Delete Action -->
+      <section class="card">
+        <h2>5. Delete Action Test</h2>
+        <p>Create and delete items</p>
+        <button id="btnCreateItem" class="btn btn-success">Create Item</button>
+        <ul id="itemList" class="item-list"></ul>
+      </section>
+    </main>
+
+    <footer>
+      <p>🔍 FlowTrace QA Extension Test Suite</p>
+      <p class="hint">Open Chrome DevTools → FlowTrace QA tab → Start Recording → Interact with this page</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

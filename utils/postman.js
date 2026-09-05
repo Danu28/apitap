@@ -51,10 +51,6 @@
     } catch (e) { return 'request'; }
   }
 
-  function stripTruncation(body) {
-    return typeof body === 'string' ? body.replace(/\n\/\/ \[ApiTap\] truncated.*$/m, '') : body;
-  }
-
   function headerEntry(header) {
     if (!header || (!header.name && !header.key)) return null;
     const name = header.name || header.key;
@@ -78,7 +74,7 @@
   }
 
   function requestBodyMode(raw) {
-    const cleaned = stripTruncation(raw || '');
+    const cleaned = raw || '';
     if (!cleaned) return null;
     let language = 'text';
     try { JSON.parse(cleaned); language = 'json'; } catch (e) {}

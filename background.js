@@ -166,8 +166,17 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   if (!isRecording || !params || source.tabId !== recordingTabId) return;
   switch (method) {
     case 'Network.requestWillBeSent': {
+      const prior = pendingRequests.get(params.requestId);
       const rec = DebugCapture.requestStart(params);
-      if (rec) pendingRequests.set(params.requestId, rec);
+      if (rec) {
+        // Redirect re-send (same requestId, `redirectResponse` set): CDP omits
+        // postData on the redirected hop — carry it forward so a 307/308 POST
+        // redirect doesn't replay bodyless.
+        if (prior && prior.postData && !rec.postData && prior.method === rec.method) {
+          rec.postData = prior.postData;
+        }
+        pendingRequests.set(params.requestId, rec);
+      }
       break;
     }
     case 'Network.responseReceived': {
@@ -235,6 +244,9 @@ async function handleStartRecording(message, sendResponse) {
   } catch (e) {
     stopCapture();
     recordingStartTime = null;
+    // attach succeeded but Network.enable failed (rare): detach so the tab
+    // doesn't stay wedged under a dead debugger (next Start would fail).
+    try { await chrome.debugger.detach({ tabId: tab.id }); } catch (e2) { /* never attached */ }
     sendResponse({ success: false, error: 'Could not record this tab: ' + e.message });
     return;
   }
