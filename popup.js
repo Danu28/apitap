@@ -43,13 +43,12 @@
     if(actionText){ els.toastAction.textContent=actionText; els.toastAction.classList.remove('hidden'); els.toastAction.onclick=()=>{ onAction&&onAction(); els.toast.classList.remove('show'); }; setTimeout(()=>els.toast.classList.remove('show'),5000); }
     else { els.toastAction.classList.add('hidden'); setTimeout(()=>els.toast.classList.remove('show'),2200); }
   }
+  let lastSessRefresh=0;
   async function fetchSession(){
     const res = await send({type:'GET_SESSION'});
     if(res && res.session){ session=res.session; }
-    // also refresh sessions list occasionally
-    refreshSessions();
+    if(Date.now()-lastSessRefresh>2000){ lastSessRefresh=Date.now(); refreshSessions(); }
     render();
-    updateElapsed();
   }
   function scheduleFetch(){ clearTimeout(fetchTimer); fetchTimer=setTimeout(fetchSession,200); }
 
@@ -62,10 +61,10 @@
   function updateElapsed(){
     clearInterval(elapsedTimer);
     if(session.isRecording && !session.isPaused && session.recordingStartTime){
-      const tick=()=>{ els.elapsed.textContent='· '+formatElapsed(Date.now()-session.recordingStartTime)+' · '+(session.recordingTabTitle||('tab '+(session.recordingTabId!=null?session.recordingTabId:'?'))); };
+      const tick=()=>{ els.elapsed.textContent=formatElapsed(Date.now()-session.recordingStartTime); els.elapsed.title=session.recordingTabTitle||('tab '+(session.recordingTabId!=null?session.recordingTabId:'?')); };
       tick(); elapsedTimer=setInterval(tick,1000);
-    } else if(session.isPaused){ els.elapsed.textContent='· paused'; }
-    else { els.elapsed.textContent=''; }
+    } else if(session.isPaused){ els.elapsed.textContent='paused'; els.elapsed.title=''; }
+    else { els.elapsed.textContent=''; els.elapsed.title=''; }
   }
   function stopReasonText(r){
     if(!r) return '';
@@ -588,6 +587,4 @@
 
   chrome.runtime.onMessage.addListener((message)=>{ if(message&&message.type==='SESSION_UPDATED') scheduleFetch(); });
   fetchSession();
-  // refresh elapsed every second even when no SESSION_UPDATED
-  setInterval(updateElapsed,1000);
 })();
