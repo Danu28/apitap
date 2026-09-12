@@ -27,11 +27,11 @@
       var postData = null;
       if (call.requestBody) {
         var mime = 'text/plain';
-        for (var i = 0; i < reqHeaders.length; i++) if (reqHeaders[i].name.toLowerCase() === 'content-type') { mime = reqHeaders[i].value; break; }
+        for (var i = 0; i < reqHeaders.length; i++) if (String(reqHeaders[i].name).toLowerCase() === 'content-type') { mime = String(reqHeaders[i].value).split(';')[0].trim() || mime; break; }
         postData = { mimeType: mime, text: call.requestBody };
       }
       var content = { size: call.responseBody ? call.responseBody.length : 0, mimeType: 'text/plain' };
-      for (var j = 0; j < resHeaders.length; j++) if (resHeaders[j].name.toLowerCase() === 'content-type') { content.mimeType = resHeaders[j].value; break; }
+      for (var j = 0; j < resHeaders.length; j++) if (String(resHeaders[j].name).toLowerCase() === 'content-type') { content.mimeType = String(resHeaders[j].value).split(';')[0].trim() || content.mimeType; break; }
       if (call.responseBody) content.text = call.responseBody;
       return {
         startedDateTime: started,
@@ -54,7 +54,11 @@
     }
     var paths = {};
     var baseUrl = '';
-    try { if (calls[0]) baseUrl = new URL(calls[0].url).origin; } catch (e) {}
+    try {
+      var tally={}; for(var _t=0;_t<calls.length;_t++){ try{ var o=new URL(calls[_t].url).origin; tally[o]=(tally[o]||0)+1; }catch(e){} }
+      var best=null, bestN=0; for(var k in tally) if(tally[k]>bestN){ best=k; bestN=tally[k]; }
+      if(best) baseUrl=best; else if(calls[0]) baseUrl=new URL(calls[0].url).origin;
+    } catch (e) {}
     groups.forEach(function (list, key) {
       var parts = key.split('|');
       var method = (parts[0] || 'GET').toLowerCase();

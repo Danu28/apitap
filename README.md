@@ -34,15 +34,24 @@ Creating a proper CRX/Web Store build is a follow-up; for now this is a load-unp
 | Permission | Why |
 |---|---|
 | `debugger` | CDP capture of the recorded tab (method, URL, headers, request + response bodies) |
-| `downloads` | Export the Postman collection with save-as |
-| `storage` + `unlimitedStorage` | Session + selection persistence across restarts |
+| `downloads` | Export the Postman collection with save-as (Blob+objectURL) |
+| `storage` + `unlimitedStorage` | Session + selection persistence across restarts (4MB quota guard truncates oldest response bodies) |
+| `tabs` + `activeTab` | Resolve active tab for recording + scope "Same origin" |
+| `host_permissions: http/https` | Allow debugger attach to http(s) tabs; `optional_host_permissions: <all_urls>` for file tabs if requested |
+| `clipboardWrite` | Copy cURL / fetch / JSON from popup |
 
-No `host_permissions`, no content scripts, no network calls made by the extension itself.
+No content scripts, no network calls made by the extension itself.
+
+## Scope & Redaction
+
+- **Scope**: Advanced → Scope bar. `All` / `API only` (client view-filter hosts `api.`), `Same origin` (uses recording tab origin), or comma `Allow hosts` (exact or subdomain suffix, stored in `scopeAllowlist`). Background `isScopeAllowed` enforces on ingest; view-filter further narrows display.
+- **Redaction**: Export dialog → `Redact Authorization → {{authToken}}` (header + Postman Auth tab + `{{authToken}}` variable) and `Redact sensitive query tokens` (`token`, `api_key`, `access_token`, … → `{{authToken}}` in URL + `?query` breakdown). Cookies never exported. Use `Keep Origin/Referer` only if replay needs it.
+- **Quota**: `chrome.storage.local` guarded at ~4MB — oldest response bodies nulled until under limit; `background` flushes on `onSuspend` and `tabs.onRemoved`.
 
 ## Development
 
 ```
-node apitap.test.js    # 18 tests: noise filter, grouping, checked-state, exporter, CDP mapping
+node apitap.test.js    # 30 tests: noise filter, grouping, checked-state, exporter, CDP mapping, har/openapi, query-redact, keepOrigin, fingerprint query-aware
 ```
 
 Pure logic lives in `utils/` (dual-exported so Node can test it):

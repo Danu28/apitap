@@ -54,8 +54,13 @@
 
     if (noiseReason) this.filtered++;
 
+    if (this._nextId == null) {
+      var mx = 0;
+      for (var _i = 0; _i < this.calls.length; _i++) { var _m = /^c(\d+)$/.exec(this.calls[_i].id || ''); if (_m) mx = Math.max(mx, parseInt(_m[1],10)); }
+      this._nextId = mx + 1;
+    }
     const call = {
-      id: 'c' + (this.calls.length + 1),
+      id: 'c' + (this._nextId++),
       method: rawCall.method || 'GET',
       url: rawCall.url || '',
       status: rawCall.status != null ? rawCall.status : null,
@@ -77,13 +82,14 @@
   };
 
   Correlator.prototype.fingerprint = function (call) {
-    let host = '', path = '';
+    let host = '', path = '', search = '';
     try {
       const u = new URL(call.url || '');
       host = u.host;
       path = u.pathname;
+      search = u.search; // include query to avoid dropping ?page=1 vs ?page=2 within window
     } catch (e) {}
-    return (call.method || 'GET') + '|' + host + '|' + path + '|' + (call.status != null ? call.status : '');
+    return (call.method || 'GET') + '|' + host + '|' + path + '|' + search + '|' + (call.status != null ? call.status : '');
   };
 
   /* ---------- grouping ---------- */
@@ -156,11 +162,19 @@
     if (Array.isArray(state.calls)) this.calls = state.calls;
     if (typeof state.filtered === 'number') this.filtered = state.filtered;
     if (typeof state.deduped === 'number') this.deduped = state.deduped;
+    this.dedupeKeyToTs = new Map();
     // Persisted calls without an explicit checked state: noise defaults off,
     // everything else on.
     for (const call of this.calls) {
       if (typeof call.checked !== 'boolean') call.checked = !call.noiseReason;
     }
+    // Rebuild next id counter from max to avoid collisions after restore
+    var maxId = 0;
+    for (var i = 0; i < this.calls.length; i++) {
+      var m = /^c(\d+)$/.exec(this.calls[i].id || '');
+      if (m) maxId = Math.max(maxId, parseInt(m[1], 10));
+    }
+    this._nextId = maxId + 1;
   };
 
   return Correlator;

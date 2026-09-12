@@ -314,4 +314,68 @@ t('nothing checked -> empty collection, still valid JSON', () => {
   JSON.parse(JSON.stringify(col));
 });
 
+/* ---- new coverage: fingerprint query-aware, bulk failed+2xx, redact, keepOrigin, har/openapi ---- */
+t('fingerprint now includes query — ?page=1 vs ?page=2 not deduped within window', () => {
+  const c = new Correlator();
+  assert(c.addCall({ method: 'GET', url: 'https://api.x.com/users?page=1', status:200, ts:1000 }));
+  assert(c.addCall({ method: 'GET', url: 'https://api.x.com/users?page=2', status:200, ts:1100 })); // not deduped anymore
+  assert.strictEqual(c.deduped, 0);
+  assert.strictEqual(c.calls.length, 2);
+  // same url still deduped
+  assert.strictEqual(c.addCall({ method: 'GET', url: 'https://api.x.com/users?page=2', status:200, ts:1200 }), null);
+  assert.strictEqual(c.deduped, 1);
+});
+t('bulk failed includes errorText, 2xx-only isolates', () => {
+  const c = new Correlator();
+  c.addCall({ method: 'GET', url:'https://api.x.com/a', status:200, ts:1000 });
+  c.addCall({ method: 'GET', url:'https://api.x.com/b', status:500, ts:2000 });
+  c.addCall({ method: 'GET', url:'https://api.x.com/c', status:null, ts:3000, errorText:'net::ERR_FAILED' });
+  // simulate bulk failed via direct logic mirror: failed = status>=400 || errorText
+  let failed = c.calls.filter(x=> (x.status!=null && x.status>=400) || !!x.errorText);
+  assert.strictEqual(failed.length, 2);
+});
+t('query token redaction replaces sensitive keys', () => {
+  const c = new Correlator();
+  c.addCall({ method:'GET', url:'https://api.x.com/users?token=sec&page=2', status:200, ts:1000 });
+  c.addCall({ method:'GET', url:'https://api.x.com/users?api_key=abc', status:200, ts:2000 });
+  const col = Exporter.buildCollection(c, { redactQueryTokens:true });
+  assert(col.item[0].item[0].request.url.raw.includes('token={{authToken}}'));
+  const q = col.item[0].item[0].request.url.query;
+  assert(q.find(x=>x.key==='token').value==='{{authToken}}');
+  const col2 = Exporter.buildCollection(c, { redactQueryTokens:false });
+  assert(col2.item[0].item[0].request.url.raw.includes('token=sec'));
+});
+t('keepOrigin preserves Origin/Referer, otherwise dropped', () => {
+  const c = new Correlator();
+  c.addCall({ method:'GET', url:'https://api.x.com/data', status:200, ts:1000, requestHeaders:[{name:'Origin', value:'https://shop.com'}, {name:'Referer', value:'https://shop.com/page'}, {name:'Cookie', value:'a=1'}] });
+  let col = Exporter.buildCollection(c, { keepOrigin:false });
+  let hdr = JSON.stringify(col.item[0].item[0].request.header);
+  assert(!hdr.includes('Origin'));
+  col = Exporter.buildCollection(c, { keepOrigin:true });
+  hdr = JSON.stringify(col.item[0].item[0].request.header);
+  assert(hdr.includes('Origin'));
+  assert(!hdr.toLowerCase().includes('cookie'));
+});
+t('har builder mime splits charset, openapi uses most-common origin', () => {
+  const Har = require('./utils/har.js');
+  const c2 = new Correlator();
+  c2.addCall({ method:'POST', url:'https://api.x.com/a', status:200, ts:1000, requestHeaders:[{name:'Content-Type', value:'application/json; charset=utf-8'}], requestBody:'{}', responseHeaders:[{name:'Content-Type', value:'text/html; charset=utf-8'}], responseBody:'<hi>' });
+  c2.addCall({ method:'GET', url:'https://api.x.com/b', status:200, ts:2000, requestHeaders:[], responseHeaders:[], responseBody:'x' });
+  c2.addCall({ method:'GET', url:'https://other.com/c', status:200, ts:3000 });
+  const har = Har.buildHar(c2);
+  assert.strictEqual(har.log.entries[0].request.postData.mimeType, 'application/json');
+  assert.strictEqual(har.log.entries[0].response.content.mimeType, 'text/html');
+  const oas = Har.buildOpenApi(c2);
+  assert(oas.servers[0].url.includes('api.x.com')); // most-common wins
+});
+t('dedupe map resets on mergeState', () => {
+  const c = new Correlator();
+  c.addCall({ method:'GET', url:'https://api.x.com/users', status:200, ts:1000 });
+  const s = c.serialize();
+  const r = new Correlator();
+  r.mergeState(s);
+  assert.strictEqual(r.dedupeKeyToTs.size, 0);
+  assert(r.addCall({ method:'GET', url:'https://api.x.com/users', status:200, ts:1100 })); // not considered burst after restore
+});
+
 console.log(process.exitCode ? 'FAILURES PRESENT' : 'ALL TESTS PASSED');

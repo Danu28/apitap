@@ -219,11 +219,12 @@
       </div>
       <div class="bulk-bar" aria-label="Bulk selection">
         <span>Bulk:</span>
-        <button class="small" data-bulk="all">All</button>
-        <button class="small" data-bulk="none">None</button>
-        <button class="small" data-bulk="invert">Invert</button>
-        <button class="small" data-bulk="failed">Failed</button>
-        <button class="small" data-bulk="2xx">2xx only</button>
+        <button class="small" data-bulk="all" aria-label="Select all">All</button>
+        <button class="small" data-bulk="none" aria-label="Select none">None</button>
+        <button class="small" data-bulk="invert" aria-label="Invert selection">Invert</button>
+        <button class="small" data-bulk="failed" aria-label="Select failed">Failed</button>
+        <button class="small" data-bulk="2xx" aria-label="Select 2xx">2xx</button>
+        <button class="small" data-bulk="2xx-only" aria-label="Only 2xx">2xx only</button>
       </div>
       <div class="sessions" aria-label="Sessions">
         <input id="sessionName" type="text" placeholder="Session name…" aria-label="Session name">
@@ -251,6 +252,7 @@
       <label>Collection name <input id="expName" type="text" placeholder="ApiTap — Recorded flow"></label>
       <label>Base URL override <input id="expBaseUrl" type="text" placeholder="(auto detect) e.g. https://api.shop.com"></label>
       <label style="flex-direction:row; align-items:center; gap:8px; display:flex"><input id="expRedact" type="checkbox"> Redact Authorization → {{authToken}}</label>
+      <label style="flex-direction:row; align-items:center; gap:8px; display:flex"><input id="expRedactQuery" type="checkbox"> Redact sensitive query tokens → {{authToken}}</label>
       <label style="flex-direction:row; align-items:center; gap:8px; display:flex"><input id="expKeepOrigin" type="checkbox"> Keep Origin / Referer headers</label>
       <label style="flex-direction:row; align-items:center; gap:8px; display:flex"><input id="expExamples" type="checkbox" checked> Include example responses</label>
       <div id="authWarn" class="hidden" style="color:var(--amber); font-size:12px">⚠ 3+ auth headers detected — consider redacting before sharing.</div>

@@ -15,6 +15,7 @@ const PREFS_KEY = 'apitapPrefs';
 const ONBOARDING_KEY = 'apitapOnboarding';
 const PERSIST_DEBOUNCE_MS = 500;
 const MAX_SESSIONS = 5;
+const MAX_STORAGE_BYTES = 4000000; // ~4MB guard
 
 let isRecording = false;
 let isPaused = false;
@@ -27,7 +28,8 @@ let pendingRequests = new Map();
 let correlator = null;
 let restoreStatePromise = restorePersistedSession();
 let persistTimer = null;
-let prefs = { keepOrigin: false, redactAuth: false, onboardingDismissed: false };
+let broadcastTimer = null;
+let prefs = { keepOrigin: false, redactAuth: false, redactQueryTokens: false, onboardingDismissed: false };
 let scopeAllowlist = null; // null = all, else array of host substrings lowercased
 
 function initCorrelator() {
@@ -36,15 +38,35 @@ function initCorrelator() {
 }
 
 function broadcastUpdate() {
-  try {
-    chrome.runtime.sendMessage({ type: 'SESSION_UPDATED' }, () => void chrome.runtime.lastError);
-  } catch (e) { }
+  if (broadcastTimer != null) return;
+  broadcastTimer = setTimeout(() => {
+    broadcastTimer = null;
+    try {
+      chrome.runtime.sendMessage({ type: 'SESSION_UPDATED' }, () => void chrome.runtime.lastError);
+    } catch (e) { }
+  }, 300);
+}
+
+function isTabAttachableUrl(url) {
+  if (!url) return false;
+  return /^https?:\/\//i.test(url);
 }
 
 /* ---------- persistence ---------- */
 
 async function persistSession() {
   try {
+    let engine = correlator ? correlator.serialize() : null;
+    // quota guard: if payload too large, drop oldest response bodies
+    if (engine && engine.calls) {
+      let payload = JSON.stringify(engine);
+      if (payload.length > MAX_STORAGE_BYTES) {
+        for (let i = 0; i < engine.calls.length && payload.length > MAX_STORAGE_BYTES; i++) {
+          if (engine.calls[i].responseBody) engine.calls[i].responseBody = null;
+          payload = JSON.stringify(engine);
+        }
+      }
+    }
     await chrome.storage.local.set({
       [SESSION_STORAGE_KEY]: {
         isRecording: isRecording,
@@ -55,7 +77,7 @@ async function persistSession() {
         lastStopReason: lastStopReason,
         lastStopTime: lastStopTime,
         scopeAllowlist: scopeAllowlist,
-        engine: correlator ? correlator.serialize() : null
+        engine: engine
       },
       [PREFS_KEY]: prefs
     });
@@ -71,6 +93,7 @@ function schedulePersist() {
   persistTimer = setTimeout(() => { persistTimer = null; persistSession(); }, PERSIST_DEBOUNCE_MS);
 }
 function cancelPersist() { if (persistTimer != null) { clearTimeout(persistTimer); persistTimer = null; } }
+function flushPersist() { cancelPersist(); return persistSession(); }
 
 async function restorePersistedSession() {
   try {
@@ -88,8 +111,12 @@ async function restorePersistedSession() {
       scopeAllowlist = saved.scopeAllowlist || null;
       if (saved.engine) { const c = initCorrelator(); c.mergeState(saved.engine); }
       if (isRecording && recordingTabId != null) {
-        try { await attachDebugger(recordingTabId); } catch (e) {
-          stopCapture('detach-failed');
+        try {
+          const tab = await chrome.tabs.get(recordingTabId);
+          if (!tab || !isTabAttachableUrl(tab.url)) throw new Error('tab not attachable');
+          await attachDebugger(recordingTabId);
+        } catch (e) {
+          stopCapture(e.message && e.message.includes('attachable') ? 'no-tab' : 'detach-failed');
           recordingStartTime = null;
           await persistSession();
         }
@@ -109,7 +136,6 @@ function isScopeAllowed(url) {
   if (!scopeAllowlist || !scopeAllowlist.length) return true;
   try {
     var host = new URL(url).hostname.toLowerCase();
-    // quick chips: "api-only" handled in popup but allowlist is explicit hosts
     return scopeAllowlist.some(function (h) { return host === h || host.endsWith('.' + h); });
   } catch (e) { return true; }
 }
@@ -117,10 +143,11 @@ function isScopeAllowed(url) {
 /* ---------- downloading ---------- */
 function downloadJson(filename, obj) {
   const payload = JSON.stringify(obj, null, 2);
-  let bin = '';
-  for (const b of new TextEncoder().encode(payload)) bin += String.fromCharCode(b);
-  const url = 'data:application/json;base64,' + btoa(bin);
-  return chrome.downloads.download({ url: url, filename: filename, saveAs: true }).then(() => ({ success: true })).catch((e) => ({ success: false, error: e.message }));
+  const blob = new Blob([payload], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  return chrome.downloads.download({ url: url, filename: filename, saveAs: true })
+    .then(() => { setTimeout(() => URL.revokeObjectURL(url), 60000); return { success: true }; })
+    .catch((e) => { URL.revokeObjectURL(url); return { success: false, error: e.message }; });
 }
 function clipboardPayload(obj) {
   return JSON.stringify(obj, null, 2);
@@ -135,7 +162,6 @@ async function saveNamedSession(name) {
   var sessions = await listSessions();
   var now = Date.now();
   var entry = { name: name || ('Session ' + new Date().toLocaleString()), ts: now, engine: c.serialize(), scopeAllowlist: scopeAllowlist };
-  // upsert by name
   var idx = sessions.findIndex(function (s) { return s.name === entry.name; });
   if (idx !== -1) sessions.splice(idx, 1);
   sessions.unshift(entry);
@@ -184,6 +210,7 @@ function stopCapture(reason) {
 function ingestApiCall(call) {
   if (isPaused) return;
   if (!isScopeAllowed(call.url)) return;
+  // optional: drop OPTIONS preflights if telemetry-like? keep by default, filter does not drop OPTIONS
   const c = correlator || initCorrelator();
   try { c.addCall(call); } catch (e) { console.debug('[ApiTap] ingest failed:', e.message); return; }
   schedulePersist();
@@ -192,14 +219,34 @@ function ingestApiCall(call) {
 
 chrome.debugger.onDetach.addListener((source) => {
   if (source.tabId === recordingTabId) {
-    stopCapture(source.reason || 'debugger-detached');
-    // reason mapping
-    if (source.reason === 'replaced_with_devtools') lastStopReason = 'devtools';
-    else if (!lastStopReason) lastStopReason = 'detached';
+    const reason = source.reason || 'debugger-detached';
+    const map = {
+      'replaced_with_devtools': 'devtools',
+      'target_closed': 'tab-closed',
+      'canceled_by_user': 'detached',
+      'target_crashed': 'target-crashed'
+    };
+    stopCapture(map[reason] || reason);
+    if (reason === 'replaced_with_devtools') lastStopReason = 'devtools';
     persistSession();
     broadcastUpdate();
   }
 });
+
+if (chrome.tabs && chrome.tabs.onRemoved) {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    if (tabId === recordingTabId && isRecording) {
+      stopCapture('tab-closed');
+      persistSession();
+      broadcastUpdate();
+    }
+  });
+}
+
+// flush on suspend
+try {
+  chrome.runtime.onSuspend.addListener(() => { flushPersist(); });
+} catch (e) {}
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
   if (!isRecording || isPaused || !params || source.tabId !== recordingTabId) return;
@@ -221,15 +268,13 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     case 'Network.loadingFinished': {
       const rec = pendingRequests.get(params.requestId);
       if (!rec) break;
+      // mark as finishing to avoid double ingest with loadingFailed
+      pendingRequests.delete(params.requestId);
       chrome.debugger.sendCommand({ tabId: recordingTabId }, 'Network.getResponseBody', { requestId: params.requestId })
         .then((res) => {
-          if (!pendingRequests.has(params.requestId)) return;
-          pendingRequests.delete(params.requestId);
           ingestApiCall(DebugCapture.finish(rec, res && res.body, res && res.base64Encoded));
         })
         .catch(() => {
-          if (!pendingRequests.has(params.requestId)) return;
-          pendingRequests.delete(params.requestId);
           ingestApiCall(DebugCapture.finish(rec, null, false));
         });
       break;
@@ -248,10 +293,20 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 /* ---------- handlers ---------- */
 async function handleStartRecording(message, sendResponse) {
   await ensureSessionLoaded();
-  if (isRecording) { sendResponse({ success: true, startedAt: recordingStartTime, tabId: recordingTabId }); return; }
+  if (isRecording) {
+    // verify debugger still attached
+    if (recordingTabId != null) {
+      try { const t = await chrome.tabs.get(recordingTabId); if (!t) throw new Error('no tab'); } catch (e) {
+        stopCapture('detached'); await persistSession(); broadcastUpdate();
+        // fall through to start new
+      }
+      if (isRecording) { sendResponse({ success: true, startedAt: recordingStartTime, tabId: recordingTabId }); return; }
+    }
+  }
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   const tab = tabs && tabs[0];
   if (!tab || tab.id == null) { sendResponse({ success: false, error: 'No active tab to record' }); return; }
+  if (!isTabAttachableUrl(tab.url)) { sendResponse({ success: false, error: 'Cannot record this tab (chrome://, extension, or file tabs not supported)' }); return; }
   recordingStartTime = Date.now();
   recordingTabId = tab.id;
   recordingTabTitle = tab.title || tab.url || '';
@@ -261,7 +316,7 @@ async function handleStartRecording(message, sendResponse) {
   try { await attachDebugger(tab.id); } catch (e) {
     stopCapture(null); recordingStartTime = null;
     try { await chrome.debugger.detach({ tabId: tab.id }); } catch (e2) {}
-    sendResponse({ success: false, error: 'Could not record this tab: ' + e.message }); return;
+    sendResponse({ success: false, error: 'Could not record this tab: ' + e.message + ' — close DevTools and try again' }); return;
   }
   initCorrelator();
   await persistSession();
@@ -293,7 +348,6 @@ async function handleClearSession(message, sendResponse) {
   cancelPersist();
   correlator = null;
   recordingStartTime = null;
-  // keep lastStopReason as 'clear' for UI
   lastStopReason = 'clear'; lastStopTime = Date.now();
   await persistSession();
   sendResponse({ success: true });
@@ -303,7 +357,6 @@ async function handleRestoreSession(message, sendResponse) {
   await ensureSessionLoaded();
   if (!message.state) { sendResponse({ success: false, error: 'no state' }); return; }
   var c = new ApiTapCorrelator();
-  // message.state is { calls, filtered, deduped } from serialize
   c.mergeState(message.state);
   correlator = c;
   await persistSession();
@@ -324,14 +377,22 @@ async function handleBulkChecked(message, sendResponse) {
   const c = initCorrelator();
   var ids = message.ids || [];
   var checked = !!message.checked;
-  var mode = message.mode || 'ids'; // ids | all | none | invert | failed | 2xx | method:GET etc
+  var mode = message.mode || 'ids';
   var updated = 0;
   if (mode === 'all') { for (var i=0;i<c.calls.length;i++) { c.calls[i].checked = true; updated++; } }
   else if (mode === 'none') { for (var i=0;i<c.calls.length;i++) { c.calls[i].checked = false; updated++; } }
   else if (mode === 'invert') { for (var i=0;i<c.calls.length;i++) { c.calls[i].checked = !c.calls[i].checked; updated++; } }
-  else if (mode === 'failed') { for (var i=0;i<c.calls.length;i++) { var s=c.calls[i].status; var fail = s!=null && s>=400; c.calls[i].checked = !!checked ? fail : !fail ? c.calls[i].checked : false; if (fail===checked) updated++; } if (checked) { updated = 0; for (var k=0;k<c.calls.length;k++) if (c.calls[k].status!=null && c.calls[k].status>=400) { c.calls[k].checked=true; updated++; } } else { /* uncheck failed only */ updated=0; for (var k2=0;k2<c.calls.length;k2++) if (c.calls[k2].status!=null && c.calls[k2].status>=400) { c.calls[k2].checked=false; updated++; } }
+  else if (mode === 'failed') {
+    updated = 0;
+    for (var i=0;i<c.calls.length;i++) {
+      var s=c.calls[i].status;
+      var fail = (s!=null && s>=400) || !!c.calls[i].errorText;
+      if (checked) { if (fail) { c.calls[i].checked = true; updated++; } }
+      else { if (fail) { c.calls[i].checked = false; updated++; } }
+    }
   }
   else if (mode === '2xx') { updated = 0; for (var a=0;a<c.calls.length;a++) { var st=c.calls[a].status; if (st!=null && st>=200 && st<300) { c.calls[a].checked=checked; updated++; } } }
+  else if (mode === '2xx-only') { updated = 0; for (var a2=0;a2<c.calls.length;a2++) { var st2=c.calls[a2].status; var is2xx = st2!=null && st2>=200 && st2<300; c.calls[a2].checked = is2xx; if (is2xx) updated++; } }
   else if (mode && mode.indexOf('method:')===0) { var m=mode.split(':')[1].toUpperCase(); updated=0; for (var b=0;b<c.calls.length;b++) if ((c.calls[b].method||'GET').toUpperCase()===m) { c.calls[b].checked=checked; updated++; } }
   else { for (var c2=0;c2<ids.length;c2++) updated += c.setChecked(ids[c2], checked); }
   await persistSession();
@@ -370,11 +431,9 @@ async function handleExport(message, sendResponse) {
   await ensureSessionLoaded();
   const c = correlator || initCorrelator();
   const opts = message.opts || {};
-  // merge prefs with opts
-  var effOpts = { keepOrigin: !!(opts.keepOrigin || prefs.keepOrigin), redactAuth: !!(opts.redactAuth || prefs.redactAuth || opts.redact), collectionName: opts.collectionName, baseUrlOverride: opts.baseUrlOverride, includeExamples: opts.includeExamples !== false };
+  var effOpts = { keepOrigin: !!(opts.keepOrigin || prefs.keepOrigin), redactAuth: !!(opts.redactAuth || prefs.redactAuth || opts.redact), redactQueryTokens: !!(opts.redactQueryTokens || prefs.redactQueryTokens), collectionName: opts.collectionName, baseUrlOverride: opts.baseUrlOverride, includeExamples: opts.includeExamples !== false };
   const collection = PostmanExporter.buildCollection(c, effOpts);
   if (opts.collectionName && !collection.info.name) collection.info.name = opts.collectionName;
-  // clipboard export
   if (message.clipboard) {
     sendResponse({ success: true, clipboard: clipboardPayload(collection) });
     return;
@@ -440,6 +499,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     case 'RENAME_SESSION':
       renameNamedSession(message.oldName, message.newName).then((s) => sendResponse({ success: true, sessions: s }));
+      return true;
+    case 'GET_FULL_STATE':
+      ensureSessionLoaded().then(() => {
+        const c = correlator || initCorrelator();
+        sendResponse({ success: true, state: c.serialize() });
+      });
       return true;
     default:
       sendResponse({ success: false, error: 'Unknown message type: ' + message.type });

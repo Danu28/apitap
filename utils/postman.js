@@ -29,6 +29,23 @@
   // When keepOrigin is true, these are NOT dropped
   const KEEPABLE = new Set(['origin', 'referer', 'referrer']);
 
+  const SENSITIVE_QUERY_KEYS = new Set(['token','access_token','api_key','apikey','auth','authorization','key','secret','password','passwd']);
+  function redactQueryParams(url, doRedact) {
+    if (!doRedact || !url) return url;
+    try {
+      const u = new URL(url);
+      let changed = false;
+      for (const k of [...u.searchParams.keys()]) {
+        if (SENSITIVE_QUERY_KEYS.has(k.toLowerCase())) { u.searchParams.set(k, '{{authToken}}'); changed = true; }
+      }
+      if (!changed) return url;
+      let s = u.toString();
+      // keep Postman variable un-encoded
+      s = s.replace(/%7B%7BauthToken%7D%7D/g, '{{authToken}}');
+      return s;
+    } catch (e) { return url; }
+  }
+
   function commonOrigin(urls) {
     const tally = {};
     for (const u of urls) {
@@ -114,11 +131,13 @@
     return parts[0] + ' ' + (parts[2] || parts[1]);
   }
 
-  function buildUrlObject(callUrl, baseUrl) {
-    let raw = callUrl || '';
+  function buildUrlObject(callUrl, baseUrl, opts) {
+    const redactQ = opts && opts.redactQueryTokens;
+    let effectiveUrl = redactQ ? redactQueryParams(callUrl, true) : callUrl;
+    let raw = effectiveUrl || '';
     let substituted = false;
     try {
-      const origin = new URL(callUrl).origin;
+      const origin = new URL(effectiveUrl).origin;
       if (origin && baseUrl && origin === baseUrl && raw.startsWith(origin)) {
         raw = '{{baseUrl}}' + raw.slice(origin.length);
         substituted = true;
@@ -126,7 +145,7 @@
     } catch (e) {}
     const urlObj = { raw: raw };
     try {
-      const u = new URL(callUrl);
+      const u = new URL(effectiveUrl);
       urlObj.protocol = u.protocol.replace(/:$/, '');
       urlObj.host = u.hostname.split('.');
       const defaultPort = u.protocol === 'https:' ? '443' : '80';
@@ -187,13 +206,13 @@
       originalRequest: {
         method: call.method || 'GET',
         header: pickHeaders(call, {}),
-        url: buildUrlObject(call.url, null),
+        url: buildUrlObject(call.url, null, {}),
         body: requestBodyMode(call.requestBody || null)
       },
       status: String(call.status != null ? call.status : 'OK'),
       code: call.status != null ? call.status : 200,
       _postman_previewlanguage: isJson ? 'json' : 'text',
-      header: call.responseHeaders ? call.responseHeaders.map(function (hh) { return { key: hh.name, value: hh.value, name: hh.name }; }) : [],
+      header: call.responseHeaders ? call.responseHeaders.map(function (hh) { return { key: hh.name || hh.key || '', value: hh.value != null ? String(hh.value) : '', name: hh.name || hh.key || '' }; }) : [],
       body: body,
       cookie: []
     };
@@ -204,7 +223,7 @@
     const request = {
       method: method,
       header: pickHeaders(call, opts),
-      url: buildUrlObject(call.url, baseUrl)
+      url: buildUrlObject(call.url, baseUrl, opts)
     };
     if (opts && opts.droppedCount) request.description = 'headers dropped: ' + opts.droppedCount;
     const auth = authSection(call, opts);
@@ -242,7 +261,7 @@
       item.push({
         name: groupLabel(key),
         description: folderDesc,
-        item: list.map((c) => buildRequestItem(c, baseUrl, { keepOrigin: !!opts.keepOrigin, redactAuth: !!opts.redactAuth, includeExamples: opts.includeExamples !== false, droppedCount: countDropped(c, opts) }))
+        item: list.map((c) => buildRequestItem(c, baseUrl, { keepOrigin: !!opts.keepOrigin, redactAuth: !!opts.redactAuth, redactQueryTokens: !!opts.redactQueryTokens, includeExamples: opts.includeExamples !== false, droppedCount: countDropped(c, opts) }))
       });
     }
     const collectionVars = [];
