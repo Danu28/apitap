@@ -143,11 +143,31 @@ function isScopeAllowed(url) {
 /* ---------- downloading ---------- */
 function downloadJson(filename, obj) {
   const payload = JSON.stringify(obj, null, 2);
-  const blob = new Blob([payload], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  return chrome.downloads.download({ url: url, filename: filename, saveAs: true })
-    .then(() => { setTimeout(() => URL.revokeObjectURL(url), 60000); return { success: true }; })
-    .catch((e) => { URL.revokeObjectURL(url); return { success: false, error: e.message }; });
+  // try Blob URL first (no size limit), fallback to data URL if blocked
+  try {
+    const blob = new Blob([payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    return chrome.downloads.download({ url: url, filename: filename, saveAs: true })
+      .then(() => { setTimeout(() => URL.revokeObjectURL(url), 60000); return { success: true }; })
+      .catch((e) => {
+        try { URL.revokeObjectURL(url); } catch (_) {}
+        // fallback to data URL
+        try {
+          let bin = '';
+          for (const b of new TextEncoder().encode(payload)) bin += String.fromCharCode(b);
+          const dataUrl = 'data:application/json;base64,' + btoa(bin);
+          return chrome.downloads.download({ url: dataUrl, filename: filename, saveAs: true }).then(() => ({ success: true })).catch((e2) => ({ success: false, error: e2.message }));
+        } catch (e2) { return { success: false, error: e.message + ' / ' + e2.message }; }
+      });
+  } catch (e) {
+    // Blob not available — use data URL directly
+    try {
+      let bin = '';
+      for (const b of new TextEncoder().encode(payload)) bin += String.fromCharCode(b);
+      const dataUrl = 'data:application/json;base64,' + btoa(bin);
+      return chrome.downloads.download({ url: dataUrl, filename: filename, saveAs: true }).then(() => ({ success: true })).catch((e2) => ({ success: false, error: e2.message }));
+    } catch (e2) { return Promise.resolve({ success: false, error: e2.message }); }
+  }
 }
 function clipboardPayload(obj) {
   return JSON.stringify(obj, null, 2);
@@ -428,6 +448,7 @@ function sessionSnapshot() {
 }
 
 async function handleExport(message, sendResponse) {
+  try {
   await ensureSessionLoaded();
   const c = correlator || initCorrelator();
   const opts = message.opts || {};
@@ -456,6 +477,7 @@ async function handleExport(message, sendResponse) {
   const filename = opts.filename || PostmanExporter.suggestFilename(collection);
   const res = await downloadJson(filename, collection);
   sendResponse(res);
+  } catch (e) { try { sendResponse({ success: false, error: e.message || String(e) }); } catch (_) {} }
 }
 
 /* ---------- router ---------- */

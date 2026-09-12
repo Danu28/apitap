@@ -499,14 +499,15 @@
   els.btnShowMore.addEventListener('click',()=>{ visibleLimit+=100; renderFlow(); lastFlowSig=null; });
 
   function openExport(){
+    try {
     var n=(session.calls||[]).filter(c=>c.checked!==false).length;
     els.exportCount.textContent=n+' selected';
     els.expName.value='';
     els.expBaseUrl.value='';
-    els.expRedact.checked=!!(session.prefs&&session.prefs.redactAuth);
-    els.expRedactQuery.checked=!!(session.prefs&&session.prefs.redactQueryTokens);
-    els.expKeepOrigin.checked=!!(session.prefs&&session.prefs.keepOrigin);
-    els.expExamples.checked=true;
+    if (els.expRedact) els.expRedact.checked=!!(session.prefs&&session.prefs.redactAuth);
+    if (els.expRedactQuery) els.expRedactQuery.checked=!!(session.prefs&&session.prefs.redactQueryTokens);
+    if (els.expKeepOrigin) els.expKeepOrigin.checked=!!(session.prefs&&session.prefs.keepOrigin);
+    if (els.expExamples) els.expExamples.checked=true;
     (async function(){
       var ids = (session.calls||[]).filter(c=>c.checked!==false).map(c=>c.id);
       var results = await Promise.all(ids.slice(0,20).map(id=>send({type:'GET_CALL', id:id})));
@@ -517,11 +518,13 @@
       }
       els.authWarn.classList.toggle('hidden', count<3);
     })();
-    els.exportDlg.showModal();
+    try { els.exportDlg.showModal(); } catch(e){ toast('Could not open export dialog: '+e.message,'error'); }
+    } catch(e){ toast('Export dialog error: '+(e.message||e),'error'); }
   }
   els.btnExport.addEventListener('click',openExport);
   async function doExport(kind){
-    var opts={ collectionName: els.expName.value.trim()||undefined, baseUrlOverride: els.expBaseUrl.value.trim()||undefined, redact: els.expRedact.checked, redactQueryTokens: els.expRedactQuery.checked, keepOrigin: els.expKeepOrigin.checked, includeExamples: els.expExamples.checked };
+    try {
+    var opts={ collectionName: (els.expName&&els.expName.value||'').trim()||undefined, baseUrlOverride: (els.expBaseUrl&&els.expBaseUrl.value||'').trim()||undefined, redact: !!(els.expRedact&&els.expRedact.checked), redactQueryTokens: !!(els.expRedactQuery&&els.expRedactQuery.checked), keepOrigin: !!(els.expKeepOrigin&&els.expKeepOrigin.checked), includeExamples: !!(els.expExamples?els.expExamples.checked:true) };
     send({type:'SET_PREFS', prefs:{ redactAuth: opts.redact, redactQueryTokens: opts.redactQueryTokens, keepOrigin: opts.keepOrigin }});
     var msg={ type:'EXPORT_POSTMAN', opts: opts };
     if(kind==='copy') msg.clipboard=true;
@@ -544,6 +547,7 @@
       if(err.toLowerCase().indexOf('download')!==-1) hint=' — check downloads permission';
       toast(err+hint,'error');
     }
+    } catch(e){ toast('Export failed: '+(e.message||e),'error'); console.error(e); }
   }
   els.btnExportDownload.addEventListener('click',()=>doExport('download'));
   els.btnExportCopy.addEventListener('click',()=>doExport('copy'));
