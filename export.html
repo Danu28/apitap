@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ApiTap — Export</title>
+<style>
+  :root{--bg:#0b1220;--panel:#131c31;--panel-2:#18233c;--line:#24314c;--text:#dce5f5;--dim:#93a4c0;--blue:#60a5fa;--green:#34d399;--amber:#fbbf24;--rose:#fb7185;}
+  @media(prefers-color-scheme:light){:root{--bg:#f1f5f9;--panel:#fff;--panel-2:#f8fafc;--line:#e2e8f0;--text:#0f172a;--dim:#64748b;}}
+  *{box-sizing:border-box} body{margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; min-height:100vh;}
+  header{padding:16px 20px; border-bottom:1px solid var(--line); background:var(--panel); display:flex; align-items:center; gap:12px;}
+  h1{margin:0; font-size:18px} .sub{color:var(--dim); font-size:13px}
+  .wrap{max-width:820px; margin:0 auto; padding:20px;}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px;}
+  .card h2{margin:0 0 10px; font-size:15px}
+  label{display:grid; gap:6px; font-size:13px; color:var(--dim); margin-bottom:12px}
+  label input[type=text]{background:var(--panel-2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px}
+  .checks{display:grid; gap:10px; margin:12px 0}
+  .checks label{flex-direction:row; align-items:center; gap:8px; display:flex; color:var(--text); font-size:13px}
+  .actions{display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-top:16px}
+  button{background:var(--panel-2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:13px; cursor:pointer; white-space:nowrap}
+  button.primary{background:#16324f; border-color:#2b4a7a; color:#bfdbfe}
+  @media(prefers-color-scheme:light){button.primary{background:#dbeafe; border-color:#93c5fd; color:#1e40af}}
+  button:hover{border-color:var(--blue)} button:disabled{opacity:.5}
+  .stats{display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--dim)}
+  .stats b{color:var(--text)}
+  #toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--panel); border:1px solid var(--line); padding:8px 14px; border-radius:8px; opacity:0; pointer-events:none; transition:opacity .2s; max-width:90%}
+  #toast.show{opacity:1}
+  pre{max-height:300px; overflow:auto; background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:10px; font-size:12px; white-space:pre-wrap; word-break:break-all}
+</style>
+</head>
+<body>
+<header>
+  <h1>ApiTap — Export</h1>
+  <span class="sub" id="count"></span>
+  <span style="margin-left:auto; font-size:12px; color:var(--dim)">Full-page export — no popup constraints</span>
+</header>
+<div class="wrap">
+  <div class="card stats">
+    <span>Requests <b id="statCalls">0</b></span>
+    <span>Groups <b id="statGroups">0</b></span>
+    <span>Filtered <b id="statFiltered">0</b></span>
+    <span>Deduped <b id="statDeduped">0</b></span>
+  </div>
+  <div class="card">
+    <h2>Options</h2>
+    <label>Collection name<input id="expName" type="text" placeholder="ApiTap — Recorded flow"></label>
+    <label>Base URL override<input id="expBaseUrl" type="text" placeholder="(auto detect) e.g. https://api.shop.com"></label>
+    <div class="checks">
+      <label><input id="expRedact" type="checkbox"> Redact Authorization → {{authToken}}</label>
+      <label><input id="expRedactQuery" type="checkbox"> Redact sensitive query tokens → {{authToken}}</label>
+      <label><input id="expKeepOrigin" type="checkbox"> Keep Origin / Referer headers</label>
+      <label><input id="expExamples" type="checkbox" checked> Include example responses</label>
+    </div>
+    <div id="authWarn" style="color:var(--amber); font-size:12px; display:none">⚠ 3+ auth headers detected — consider redacting.</div>
+  </div>
+  <div class="card">
+    <h2>Export</h2>
+    <p style="color:var(--dim); font-size:13px; margin-top:0">Buttons stay in <b style="color:var(--text)">one line</b> on desktop — normal rendering, no popup wrap.</p>
+    <div class="actions">
+      <button id="btnDownload" class="primary">Download JSON</button>
+      <button id="btnCopy">Copy JSON</button>
+      <button id="btnEnv">Download Env</button>
+      <button id="btnHar">HAR</button>
+      <button id="btnOpenApi">OpenAPI stub</button>
+    </div>
+    <pre id="preview" style="display:none"></pre>
+  </div>
+  <p style="color:var(--dim); font-size:12px">Tip: you can still use the popup dialog for quick copy — this page is the “normal” desktop view.</p>
+</div>
+<div id="toast"></div>
+<script src="export.js"></script>
+</body>
+</html>

@@ -18,7 +18,7 @@
     hint: $('hint'),
     exportDlg: $('exportDlg'), expName: $('expName'), expBaseUrl: $('expBaseUrl'), expRedact: $('expRedact'), expRedactQuery: $('expRedactQuery'), expKeepOrigin: $('expKeepOrigin'), expExamples: $('expExamples'), exportCount: $('exportCount'), authWarn: $('authWarn'),
     chkDropPreflight: $('chkDropPreflight'), chkStrictTypes: $('chkStrictTypes'),
-    btnExportDownload: $('btnExportDownload'), btnExportCopy: $('btnExportCopy'), btnExportEnv: $('btnExportEnv'), btnExportHar: $('btnExportHar'), btnExportOpenApi: $('btnExportOpenApi'),
+    btnExportDownload: $('btnExportDownload'), btnExportCopy: $('btnExportCopy'), btnExportEnv: $('btnExportEnv'), btnExportHar: $('btnExportHar'), btnExportOpenApi: $('btnExportOpenApi'), btnOpenFull: $('btnOpenFull'),
     helpDlg: $('helpDlg')
   };
 
@@ -554,6 +554,7 @@
   els.btnExportEnv.addEventListener('click',()=>doExport('env'));
   els.btnExportHar.addEventListener('click',()=>doExport('har'));
   els.btnExportOpenApi.addEventListener('click',()=>doExport('openapi'));
+  if(els.btnOpenFull) els.btnOpenFull.addEventListener('click', ()=>{ try{ chrome.tabs.create({url: chrome.runtime.getURL('export.html')}); els.exportDlg.close(); }catch(e){ toast('Could not open page','error'); } });
 
   els.btnHelp.addEventListener('click',()=>els.helpDlg.showModal());
 

@@ -153,37 +153,39 @@
   .spinner{width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--blue);border-radius:50%;display:inline-block; animation:spin .8s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   @media(prefers-reduced-motion:reduce){ .spinner{animation:none} }
-  /* --- Desktop/Laptop alignment fixes --- */
-  html{width:600px; max-width:100%;}
-  body{width:600px; max-width:100vw; max-height:600px; overflow-y:auto; scrollbar-width:thin;}
-  header{flex-wrap:wrap; row-gap:6px; align-content:flex-start;}
-  .brand{flex:1 1 200px;}
-  .controls{flex:0 1 auto; flex-wrap:wrap; justify-content:flex-end; row-gap:4px;}
-  .stats{flex-wrap:wrap; row-gap:4px; column-gap:8px; align-content:flex-start;}
-  #stopReason{max-width:100%; margin-left:0; flex:1 1 100%; order:10; text-align:right;}
-  .flow-tools{flex-wrap:wrap; row-gap:6px;}
-  .flow-tools input[type=search]{flex:1 1 180px;}
-  .empty-steps{flex-wrap:wrap;}
-  .empty-step{min-width:140px; flex:1 1 150px;}
+  /* --- Desktop/Laptop stable layout — no flicker --- */
+  html{width:620px; max-width:100%;}
+  body{width:620px; max-width:100vw; max-height:585px; overflow-y:auto; overflow-x:hidden; scrollbar-gutter:stable; overscroll-behavior:contain; scrollbar-width:thin;}
+  header{flex-wrap:nowrap; align-items:center; gap:8px;}
+  .brand{flex:1 1 auto; min-width:0;}
+  #elapsed{flex:0 0 92px; width:92px; text-align:left; font-variant-numeric:tabular-nums;}
+  .controls{flex:0 0 auto; flex-wrap:nowrap; gap:5px;}
+  .controls button{white-space:nowrap;}
+  .stats{flex-wrap:nowrap; gap:8px;}
+  #stopReason{flex:0 1 140px; margin-left:auto; text-align:right;}
+  .flow-tools{flex-wrap:nowrap; gap:6px;}
+  .flow-tools input[type=search]{flex:1 1 auto; min-width:120px;}
+  .empty-steps{flex-wrap:nowrap; gap:8px;}
+  .empty-step{flex:1 1 0; min-width:0;}
   .adv-body{gap:10px;}
-  .scope-bar{display:grid; grid-template-columns:auto auto auto 1fr auto; gap:6px; align-items:center;}
-  .scope-bar input[type=text]{min-width:0;}
-  .chips{gap:6px;}
-  .bulk-bar{gap:6px;}
-  .sessions{display:grid; grid-template-columns:1fr auto 1fr auto; gap:6px; align-items:center;}
-  .sessions input{grid-column:1 / -1;}
-  .sessions select{grid-column:1 / span 2;}
-  @media(min-width:600px){ .sessions{grid-template-columns:1fr auto auto auto auto; } .sessions input{grid-column:auto;} .sessions select{grid-column:auto;} #stopReason{flex:0 1 auto; order:0; margin-left:auto; text-align:left;} }
-  .call{gap:6px; align-items:center;}
-  .call-url{min-width:0; flex:1 1 80px;}
-  .row-actions{flex-wrap:wrap;}
+  .scope-bar{display:flex; flex-wrap:nowrap; gap:6px; align-items:center;}
+  .scope-bar input[type=text]{flex:1 1 120px; min-width:80px;}
+  .chips{gap:5px; flex-wrap:wrap;}
+  .bulk-bar{gap:5px; flex-wrap:wrap;}
+  .sessions{display:flex; flex-wrap:wrap; gap:6px; align-items:center;}
+  .sessions input{flex:1 1 120px; min-width:100px;}
+  .sessions select{flex:1 1 140px; min-width:120px;}
+  .call{gap:6px;}
+  .call-url{min-width:0;}
   .pane{overflow:hidden;}
-  #flowContainer{overflow:hidden;}
-  dialog{margin:auto; max-height:85vh; overflow:auto;}
-  .toast{max-width:calc(100% - 20px); left:10px; right:10px; transform:none; bottom:12px;}
-  .dlg-actions{gap:8px;}
-  .help-grid{grid-template-columns:1fr 1fr;}
-  @media(max-width:480px){ .help-grid{grid-template-columns:1fr;} .scope-bar{grid-template-columns:1fr;} .sessions{grid-template-columns:1fr 1fr;} }
+  #flowContainer{overflow:hidden; contain:layout;}
+  #status .dot{will-change:opacity; backface-visibility:hidden;}
+  /* export dialog: single-line actions, no 2-row wrap */
+  dialog{margin:auto; max-height:85vh; overflow:auto; width:520px; max-width:92vw;}
+  .dlg-actions{display:grid; grid-template-columns:repeat(5, 1fr); gap:6px; justify-items:stretch;}
+  .dlg-actions button{white-space:nowrap; padding:6px 6px; font-size:12px; min-width:0;}
+  .toast{left:50%; right:auto; transform:translateX(-50%); max-width:90%; bottom:12px; will-change:opacity;}
+  @media(max-width:640px){ dialog{width:92vw;} .dlg-actions{grid-template-columns:1fr 1fr; } .dlg-actions button{grid-column:auto;} }
 </style>
 </head>
 <body>
@@ -282,7 +284,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite"><span id="toastText"></span><button id="toastAction" class="small hidden">Undo</button></div>
 
   <dialog id="exportDlg" aria-label="Export options">
-    <div class="dlg-head">Export <span style="margin-left:auto; color:var(--dim); font-weight:400; font-size:12px" id="exportCount"></span><button class="ghost" onclick="this.closest('dialog').close()" aria-label="Close">✕</button></div>
+    <div class="dlg-head">Export <span style="color:var(--dim); font-weight:400; font-size:12px" id="exportCount"></span><button id="btnOpenFull" class="small" title="Open normal full-page export (no popup wrap)" style="margin-left:auto">Open full page ↗</button><button class="ghost" onclick="this.closest('dialog').close()" aria-label="Close">✕</button></div>
     <div class="dlg-body">
       <label>Collection name <input id="expName" type="text" placeholder="ApiTap — Recorded flow"></label>
       <label>Base URL override <input id="expBaseUrl" type="text" placeholder="(auto detect) e.g. https://api.shop.com"></label>
