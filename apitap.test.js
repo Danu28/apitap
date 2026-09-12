@@ -377,5 +377,45 @@ t('dedupe map resets on mergeState', () => {
   assert.strictEqual(r.dedupeKeyToTs.size, 0);
   assert(r.addCall({ method:'GET', url:'https://api.x.com/users', status:200, ts:1100 })); // not considered burst after restore
 });
+t('preflight OPTIONS opt-in drops when enabled, otherwise kept', () => {
+  const c = new Correlator();
+  const opt1 = { dropPreflight:true };
+  const call = c.addCall({ method:'OPTIONS', url:'https://api.x.com/users', status:204, ts:1000 }, opt1);
+  assert.strictEqual(call.noiseReason, 'preflight');
+  assert.strictEqual(call.checked, false);
+  const c2 = new Correlator();
+  const call2 = c2.addCall({ method:'OPTIONS', url:'https://api.x.com/users', status:204, ts:1000 }, { dropPreflight:false });
+  assert.strictEqual(call2.noiseReason, undefined);
+  assert.strictEqual(call2.checked, true);
+  // also via NoiseFilter directly
+  assert.strictEqual(NoiseFilter.filterReason({ method:'OPTIONS', url:'https://api.x.com/x' }, { dropPreflight:true }), 'preflight');
+  assert.strictEqual(NoiseFilter.filterReason({ method:'OPTIONS', url:'https://api.x.com/x' }, { dropPreflight:false }), null);
+});
+t('resourceType filtering strict drops Stylesheet/Image etc', () => {
+  const c = new Correlator();
+  const call = c.addCall({ method:'GET', url:'https://api.x.com/data', status:200, ts:1000, resourceType:'Stylesheet' }, { strictResourceTypes:true });
+  assert.strictEqual(call.noiseReason, 'resource-type');
+  const c2 = new Correlator();
+  const call2 = c2.addCall({ method:'GET', url:'https://api.x.com/data', status:200, ts:1000, resourceType:'XHR' }, { strictResourceTypes:true });
+  assert.strictEqual(call2.noiseReason, undefined);
+  // non-strict still keeps XHR
+  const call3 = c2.addCall({ method:'GET', url:'https://api.x.com/data2', status:200, ts:2000, resourceType:'Stylesheet' }, { strictResourceTypes:false });
+  // without asset clues, not filtered when not strict
+  assert.strictEqual(call3.noiseReason, undefined);
+});
+t('debugcapture captures resourceType and propagates', () => {
+  const rec = DebugCapture.requestStart({ request:{ url:'https://api.x.com/a', method:'GET', headers:{} }, type:'XHR', wallTime:1700000000 });
+  assert.strictEqual(rec.resourceType, 'XHR');
+  const call = DebugCapture.finish(rec, '{"ok":1}', false);
+  assert.strictEqual(call.resourceType, 'XHR');
+  const rec2 = DebugCapture.requestStart({ request:{ url:'https://x.com/app.css', method:'GET', headers:{} }, type:'Stylesheet', wallTime:1700000000 });
+  assert.strictEqual(rec2.resourceType, 'Stylesheet');
+});
+t('mergeState validation drops malformed calls', () => {
+  const r = new Correlator();
+  r.mergeState({ calls:[{ id:'c1', method:'GET', url:'https://api.x.com/a', ts:1 }, { bad:true }, { method:'GET' }], filtered:0, deduped:0 });
+  assert.strictEqual(r.calls.length, 1);
+  assert.strictEqual(r.calls[0].url, 'https://api.x.com/a');
+});
 
 console.log(process.exitCode ? 'FAILURES PRESENT' : 'ALL TESTS PASSED');

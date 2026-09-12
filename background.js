@@ -29,7 +29,7 @@ let correlator = null;
 let restoreStatePromise = restorePersistedSession();
 let persistTimer = null;
 let broadcastTimer = null;
-let prefs = { keepOrigin: false, redactAuth: false, redactQueryTokens: false, onboardingDismissed: false };
+let prefs = { keepOrigin: false, redactAuth: false, redactQueryTokens: false, dropPreflight: false, strictResourceTypes: false, onboardingDismissed: false };
 let scopeAllowlist = null; // null = all, else array of host substrings lowercased
 
 function initCorrelator() {
@@ -210,9 +210,9 @@ function stopCapture(reason) {
 function ingestApiCall(call) {
   if (isPaused) return;
   if (!isScopeAllowed(call.url)) return;
-  // optional: drop OPTIONS preflights if telemetry-like? keep by default, filter does not drop OPTIONS
   const c = correlator || initCorrelator();
-  try { c.addCall(call); } catch (e) { console.debug('[ApiTap] ingest failed:', e.message); return; }
+  const filterOpts = { dropPreflight: !!prefs.dropPreflight, strictResourceTypes: !!prefs.strictResourceTypes };
+  try { c.addCall(call, filterOpts); } catch (e) { console.debug('[ApiTap] ingest failed:', e.message); return; }
   schedulePersist();
   broadcastUpdate();
 }

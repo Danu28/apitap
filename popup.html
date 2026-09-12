@@ -204,6 +204,10 @@
         <input id="scopeInput" type="text" placeholder="Allow hosts (comma, e.g. api.shop.com)" aria-label="Allow hosts">
         <button id="btnScopeApply" class="small">Apply</button>
       </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; font-size:11px; color:var(--dim)" aria-label="Filter toggles">
+        <label style="display:flex; gap:6px; align-items:center; cursor:pointer"><input id="chkDropPreflight" type="checkbox"> Drop OPTIONS preflights</label>
+        <label style="display:flex; gap:6px; align-items:center; cursor:pointer"><input id="chkStrictTypes" type="checkbox"> XHR/Fetch only</label>
+      </div>
       <div class="chips" id="chipRow" role="toolbar" aria-label="Method and status filters">
         <button class="chip active" data-chip="all">All</button>
         <button class="chip" data-chip="GET">GET</button>

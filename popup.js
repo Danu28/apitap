@@ -17,6 +17,7 @@
     pagination: $('pagination'), btnShowMore: $('btnShowMore'), pageInfo: $('pageInfo'),
     hint: $('hint'),
     exportDlg: $('exportDlg'), expName: $('expName'), expBaseUrl: $('expBaseUrl'), expRedact: $('expRedact'), expRedactQuery: $('expRedactQuery'), expKeepOrigin: $('expKeepOrigin'), expExamples: $('expExamples'), exportCount: $('exportCount'), authWarn: $('authWarn'),
+    chkDropPreflight: $('chkDropPreflight'), chkStrictTypes: $('chkStrictTypes'),
     btnExportDownload: $('btnExportDownload'), btnExportCopy: $('btnExportCopy'), btnExportEnv: $('btnExportEnv'), btnExportHar: $('btnExportHar'), btnExportOpenApi: $('btnExportOpenApi'),
     helpDlg: $('helpDlg')
   };
@@ -85,6 +86,9 @@
       els.btnStart.classList.toggle('onboard-pulse', !session.calls.length && !(session.prefs&&session.prefs.onboardingDismissed));
     }
     els.stopReason.textContent = !session.isRecording && session.lastStopReason ? stopReasonText(session.lastStopReason) + (session.lastStopTime? ' · '+new Date(session.lastStopTime).toLocaleTimeString() : '') : '';
+    // sync preflight/resourceType toggles (avoid firing change)
+    if (els.chkDropPreflight) els.chkDropPreflight.checked = !!(session.prefs && session.prefs.dropPreflight);
+    if (els.chkStrictTypes) els.chkStrictTypes.checked = !!(session.prefs && session.prefs.strictResourceTypes);
     updateElapsed();
   }
   function updateStats(){
@@ -429,6 +433,8 @@
     else if(mode==='2xx') send({type:'BULK_CHECKED', mode:'2xx', checked:true});
     else if(mode==='2xx-only') send({type:'BULK_CHECKED', mode:'2xx-only', checked:true});
   });
+  if (els.chkDropPreflight) els.chkDropPreflight.addEventListener('change', ()=> send({type:'SET_PREFS', prefs:{dropPreflight: els.chkDropPreflight.checked}}).then(fetchSession));
+  if (els.chkStrictTypes) els.chkStrictTypes.addEventListener('change', ()=> send({type:'SET_PREFS', prefs:{strictResourceTypes: els.chkStrictTypes.checked}}).then(fetchSession));
   function applyScope(){
     var input=els.scopeInput.value.trim();
     var active=document.querySelector('.scope-chip.active');

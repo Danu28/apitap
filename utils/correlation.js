@@ -39,8 +39,8 @@
    * burst duplicate. Noise calls (assets/telemetry) are NOT discarded — they
    * are stored unchecked so the user can decide whether to include them.
    */
-  Correlator.prototype.addCall = function (rawCall) {
-    const noiseReason = rawCall ? NoiseFilter.filterReason(rawCall) : 'no-url';
+  Correlator.prototype.addCall = function (rawCall, opts) {
+    const noiseReason = rawCall ? NoiseFilter.filterReason(rawCall, opts) : 'no-url';
 
     // Burst-dedupe: same method|host|path|status within the window is a repeat.
     const fp = this.fingerprint(rawCall);
@@ -73,6 +73,7 @@
       // session and are never useful for export.
       responseBody: noiseReason ? null : truncateBody(rawCall.responseBody),
       errorText: rawCall.errorText || null, // network failure reason, when present
+      resourceType: rawCall.resourceType || '',
       ts: now,
       checked: !noiseReason,
       noiseReason: noiseReason || undefined
@@ -158,8 +159,11 @@
   };
 
   Correlator.prototype.mergeState = function (state) {
-    if (!state) return;
-    if (Array.isArray(state.calls)) this.calls = state.calls;
+    if (!state || typeof state !== 'object') return;
+    if (Array.isArray(state.calls)) {
+      // minimal schema validation: keep only well-formed calls
+      this.calls = state.calls.filter(function (c) { return c && typeof c.url === 'string' && typeof c.method === 'string'; });
+    }
     if (typeof state.filtered === 'number') this.filtered = state.filtered;
     if (typeof state.deduped === 'number') this.deduped = state.deduped;
     this.dedupeKeyToTs = new Map();
@@ -167,6 +171,7 @@
     // everything else on.
     for (const call of this.calls) {
       if (typeof call.checked !== 'boolean') call.checked = !call.noiseReason;
+      if (call.resourceType == null) call.resourceType = '';
     }
     // Rebuild next id counter from max to avoid collisions after restore
     var maxId = 0;

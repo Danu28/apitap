@@ -69,15 +69,31 @@
     return !!ctype && ASSET_CONTENT_TYPES.some((t) => ctype.includes(t));
   }
 
+  const PREFLIGHT_METHOD = 'OPTIONS';
+  const SKIP_RESOURCE_TYPES = new Set(['Stylesheet', 'Image', 'Font', 'Media', 'Manifest']);
+
+  function isPreflight(apiCall) {
+    return apiCall && apiCall.method && String(apiCall.method).toUpperCase() === PREFLIGHT_METHOD;
+  }
+  function hasFilteredResourceType(apiCall) {
+    var t = apiCall && apiCall.resourceType;
+    return !!(t && SKIP_RESOURCE_TYPES.has(t));
+  }
   /**
    * Why a call is noise: 'telemetry' | 'asset-extension' | 'asset-content-type'
-   * | 'no-url', or null when it is API traffic worth keeping.
+   * | 'preflight' | 'resource-type' | 'no-url', or null when it is API traffic worth keeping.
+   * @param {object} apiCall
+   * @param {object} [opts] { dropPreflight:boolean, strictResourceTypes:boolean }
    */
-  function filterReason(apiCall) {
+  function filterReason(apiCall, opts) {
     if (!apiCall || !apiCall.url) return 'no-url';
+    if (opts && opts.dropPreflight && isPreflight(apiCall)) return 'preflight';
+    if (opts && opts.strictResourceTypes && hasFilteredResourceType(apiCall)) return 'resource-type';
     if (isTelemetry(apiCall.url)) return 'telemetry';
     if (hasAssetExtension(apiCall.url)) return 'asset-extension';
     if (hasAssetContentType(apiCall)) return 'asset-content-type';
+    // even when not strict, still drop obvious asset resource types to reduce noise
+    if (hasFilteredResourceType(apiCall) && (hasAssetExtension(apiCall.url) || hasAssetContentType(apiCall))) return 'resource-type';
     return null;
   }
 

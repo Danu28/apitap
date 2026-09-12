@@ -47,19 +47,22 @@ No content scripts, no network calls made by the extension itself.
 - **Scope**: Advanced → Scope bar. `All` / `API only` (client view-filter hosts `api.`), `Same origin` (uses recording tab origin), or comma `Allow hosts` (exact or subdomain suffix, stored in `scopeAllowlist`). Background `isScopeAllowed` enforces on ingest; view-filter further narrows display.
 - **Redaction**: Export dialog → `Redact Authorization → {{authToken}}` (header + Postman Auth tab + `{{authToken}}` variable) and `Redact sensitive query tokens` (`token`, `api_key`, `access_token`, … → `{{authToken}}` in URL + `?query` breakdown). Cookies never exported. Use `Keep Origin/Referer` only if replay needs it.
 - **Quota**: `chrome.storage.local` guarded at ~4MB — oldest response bodies nulled until under limit; `background` flushes on `onSuspend` and `tabs.onRemoved`.
+- **Filters (opt-in)**: Advanced → `Drop OPTIONS preflights` (`preflight` noise, off by default to keep CORS debugging) and `XHR/Fetch only` (`resource-type` drops `Stylesheet`/`Image`/`Font`/`Media`). Both stored in `prefs` and passed as `filterReason` opts via `correlation.addCall(call, opts)`.
 
 ## Development
 
 ```
-node apitap.test.js    # 30 tests: noise filter, grouping, checked-state, exporter, CDP mapping, har/openapi, query-redact, keepOrigin, fingerprint query-aware
+node apitap.test.js    # 34 tests: noise filter, grouping, checked-state, exporter, CDP mapping, har/openapi, query-redact, keepOrigin, fingerprint query-aware, preflight/resourceType
+# incognito: extension uses spanning storage (default); use incognito split if strict isolation needed
 ```
 
 Pure logic lives in `utils/` (dual-exported so Node can test it):
 
-- `filter.js` — noise classification (`filterReason`: telemetry / asset-extension / asset-content-type)
-- `correlation.js` — session engine: ingest, burst-dedupe, endpoint grouping, `checked` state
-- `postman.js` — Postman v2.1 export (schema-validated against the official collection schema)
-- `debugcapture.js` — CDP Network event → internal call shape
+- `filter.js` — noise classification (`filterReason`: telemetry / asset-extension / asset-content-type / `preflight` / `resource-type` with opts `dropPreflight`+`strictResourceTypes`)
+- `correlation.js` — session engine: ingest, burst-dedupe, endpoint grouping, `checked` state (validates `mergeState` schema, query-aware fingerprint `method|host|path|search|status`)
+- `postman.js` — Postman v2.1 export (schema-validated, sensitive query redaction `{{authToken}}`, keepOrigin handling)
+- `debugcapture.js` — CDP Network event → internal call shape (captures `resourceType` `XHR`/`Stylesheet`/… via `params.type`)
+- `har.js`/`tree.js` — HAR 1.2 + OpenAPI stub + domain→endpoint tree
 
 The remaining glue (debugger attach/events, storage, downloads) is browser-only — smoke it by recording a login flow and importing the export into Postman.
 

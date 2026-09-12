@@ -48,7 +48,8 @@
       url: req.url,
       requestHeaders: headersToArray(req.headers),
       postData: (req.postData && String(req.postData)) || null,
-      wallTime: params.wallTime || 0
+      wallTime: params.wallTime || 0,
+      resourceType: params.type || params.resourceType || (params.initiator && params.initiator.type) || ''
     };
   }
 
@@ -81,6 +82,7 @@
       requestBody: record.postData || null,
       responseBody: responseBody,
       errorText: record.errorText || null, // from Network.loadingFailed, when present
+      resourceType: record.resourceType || '',
       ts: record.wallTime ? Math.round(record.wallTime * 1000) : Date.now()
     };
   }
